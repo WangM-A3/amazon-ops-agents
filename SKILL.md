@@ -8,7 +8,7 @@ metadata:
   openclaw:
     requires: ["python3>=3.10", "pip", "httpx", "fastapi", "uvicorn"]
     emoji: "📦"
-    version: "1.0.0"
+    version: "1.1.0"
     author: "云旅智能体超市"
     category: "ecommerce-ai"
     tags: ["amazon", "ecommerce", "sp-api", "fba", "ppc", "listing", "cross-border", "multi-agent"]
@@ -131,10 +131,45 @@ metadata:
 ## 四、技术实现
 
 ### 架构
-- ChiefOfStaff = 关键词路由 + 调度引擎
+- ChiefOfStaff = 关键词路由 + **端云智能路由** + 调度引擎
 - 各Agent = Python async 函数
 - API层 = FastAPI + Uvicorn
 - 数据源 = Amazon SP-API / ERP / CRM
+
+### 端云智能路由（v1.1新增）
+基于任务复杂度自动选择执行引擎：
+| 引擎 | 适用场景 | Token消耗 |
+|------|----------|-----------|
+| LOCAL | 数据提取、格式转换、统计计算 | **零** |
+| SMALL | 数据分析、报告生成、监控预警 | ~100 |
+| LARGE | 策略制定、创意生成、深度分析 | ~500 |
+
+**核心优势**：
+- 简单任务本地执行，零Token消耗
+- Agent级别引擎覆盖（如profit_calculator强制LOCAL）
+- 自动降级机制（LARGE→SMALL→LOCAL）
+
+### GUI Agent三层安全防护（v1.1新增）
+| 层级 | 机制 | 示例操作 |
+|------|------|----------|
+| 应用层 | BLOCK | 删除Listing、批量取消订单 |
+| 系统层 | CONFIRM | 修改价格、发送消息、导出敏感数据 |
+| 驱动层 | AUDIT | 操作日志、凭证加密存储 |
+
+**安全特性**：
+- 危险操作直接拦截
+- 敏感操作二次确认
+- 全量操作审计日志
+- CredentialVault凭证加密
+
+### 预置工作流（v1.1新增）
+一键启动端到端业务流程：
+| 工作流 | 步骤数 | 预估时长 |
+|--------|--------|----------|
+| 🆕 新品上架 | 4步 | 60s |
+| 📈 广告优化 | 4步 | 45s |
+| 📦 库存预警 | 5步 | 43s |
+| 💬 客户服务 | 4步 | 21s |
 
 ### 关键词路由表
 | 关键词 | Agent |
