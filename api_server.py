@@ -4,6 +4,7 @@ Amazon Operations Silicon Army
 """
 
 import asyncio
+import contextvars
 import hashlib
 import hmac
 import logging
@@ -96,6 +97,110 @@ class RateLimiter:
 
 
 rate_limiter = RateLimiter()
+
+# ─── Tracing 全局入口（Tracing 集成版） ──────────────────────────────────────
+# 支持 Tracing 的 API Server
+# 特性：
+# 1. 失败时自动创建 TraceContext，记录错误 span
+# 2. 所有 500 错误响应携带 trace_id
+# 3. 支持从 HTTP Header 传入外部 trace_id（X-Trace-ID）
+# 4. 支持用户反馈时附带 trace_id（feedback endpoint）
+
+_trace_ctx_var: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "_trace_ctx", default=None
+)  # 存储 {"trace_id": str, "scope": _SpanScope, "ctx": TraceContext}
+
+
+def _start_request_trace(
+    request: Request,
+    root_name: str | None = None,
+) -> Any | None:
+    """
+    为每个请求启动 trace 上下文。
+
+    优先使用 X-Trace-ID header（外部传入），否则自动生成。
+    返回 TraceContext 实例（未 flush）。
+    """
+    try:
+        from tracing import TraceContext, SpanType
+    except ImportError:
+        return None
+
+    # 优先从 header 获取外部 trace_id
+    incoming_trace = request.headers.get("X-Trace-ID")
+    root = root_name or f"{request.method} {request.url.path}"
+
+    ctx = TraceContext.start(name=root, trace_id=incoming_trace)
+
+    # 创建 root span
+    scope = ctx.span("HTTP.request", SpanType.ROOT, input_summary=root)
+    token = _trace_ctx_var.set({"trace_id": ctx.trace_id, "ctx": ctx, "scope": scope})
+    ctx._token = token  # 保留 token，方便 close
+
+    logger.info(f"[Trace] trace_id={ctx.trace_id} start | {root[:50]}")
+    return ctx
+
+
+def _get_request_trace_id() -> str | None:
+    """获取当前请求的 trace_id（若有）"""
+    info = _trace_ctx_var.get()
+    return info["trace_id"] if info else None
+
+
+def _finish_request_trace(
+    error: Exception | None = None,
+    extra: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    结束请求 trace，记录错误（如有）并 flush 到审计日志。
+
+    调用时机：
+    - 正常响应路径：响应发送前
+    - 异常路径：global_exception_handler 中
+
+    Returns:
+        {"trace_id": str, "summary": dict} 或 None
+    """
+    info = _trace_ctx_var.get()
+    if info is None:
+        return None
+
+    ctx = info["ctx"]
+    trace_id = ctx.trace_id
+
+    try:
+        if error:
+            try:
+                from tracing.trace_context import SpanType
+                st = SpanType.STEP
+            except Exception:
+                st = type("SpanTypeStep", (), {"value": "step"})()
+            ctx.record_error(
+                "HTTP.exception",
+                error=str(error)[:500],
+                span_type=st,
+            )
+            logger.warning(f"[Trace] trace_id={trace_id} recorded error: {error}")
+
+        if extra:
+            try:
+                from tracing.trace_context import SpanType
+                st = SpanType.STEP
+            except Exception:
+                st = type("SpanTypeStep", (), {"value": "step"})()
+            scope = ctx.span("HTTP.finish", st)
+            scope._span.finish(output_summary=extra[:200])
+
+        summary = ctx.flush()
+    finally:
+        try:
+            _trace_ctx_var.reset(info.get("ctx")._token)
+        except Exception:
+            pass
+        ctx.close()
+
+    return {"trace_id": trace_id, "summary": summary}
+
 
 # ─── 审计日志 ────────────────────────────────────────────────────────────────
 audit_log: list[dict[str, Any]] = []
@@ -399,17 +504,143 @@ async def get_audit_log(
     return {"total": len(audit_log), "entries": audit_log[-limit:]}
 
 
-# ─── 错误处理 ────────────────────────────────────────────────────────────────
+# ─── 错误处理（Tracing 集成版） ───────────────────────────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    全局异常处理（Tracing 集成版）
+
+    特性：
+    1. 尝试复用当前请求的 TraceContext，记录 error span
+    2. 如果没有 TraceContext（异常发生在中间件层之前），自动创建
+    3. 响应 JSON 中附加 trace_id，方便用户反馈
+    """
+    trace_id: str | None = None
+
+    # 尝试从当前 trace 上下文获取 trace_id
+    try:
+        trace_result = _finish_request_trace(error=exc)
+        if trace_result:
+            trace_id = trace_result["trace_id"]
+            summary = trace_result.get("summary", {})
+            error_count = summary.get("error_count", 0)
+            logger.warning(
+                f"[Trace] global_exception_handler recorded error "
+                f"trace_id={trace_id} errors={error_count}"
+            )
+    except Exception as trace_err:
+        logger.error(f"[Trace] _finish_request_trace failed: {trace_err}")
+
+    # 如果没有获取到 trace_id（异常发生在 tracing 初始化前），创建一个最小 trace
+    if not trace_id:
+        try:
+            ctx = _start_request_trace(request)
+            if ctx:
+                trace_id = ctx.trace_id
+                ctx.record_error("HTTP.exception_early", exc)
+                ctx.flush()
+                ctx.close()
+        except Exception:
+            pass
+
     logger.error(f"[Unhandled] {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "code": "INTERNAL_ERROR",
-            "message": "服务器内部错误，请联系技术支持",
-            "detail": str(exc) if os.getenv("DEBUG") else None,
+
+    content = {
+        "code": "INTERNAL_ERROR",
+        "message": "服务器内部错误，请联系技术支持",
+        "trace_id": trace_id,  # ← 关键：告知用户此 ID 用于反馈
+    }
+    if os.getenv("DEBUG"):
+        content["detail"] = str(exc)
+
+    return JSONResponse(status_code=500, content=content)
+
+
+# ─── 用户反馈接口 ────────────────────────────────────────────────────────────
+class FeedbackRequest(BaseModel):
+    """用户反馈模型"""
+    trace_id: str | None = Field(None, description="发生问题的 trace_id（可选）")
+    description: str = Field(..., min_length=10, max_length=2000, description="问题描述")
+    contact: str | None = Field(None, description="联系方式（可选）")
+    tags: list[str] = Field(default_factory=list, description="标签")
+
+
+class FeedbackResponse(BaseModel):
+    feedback_id: str
+    trace_id: str | None
+    status: str
+    message: str
+
+
+@app.post("/api/v1/feedback", response_model=FeedbackResponse, tags=["系统"])
+async def submit_feedback(
+    req: FeedbackRequest,
+    auth: dict = Depends(require_auth),
+) -> FeedbackResponse:
+    """
+    用户反馈接口
+
+    功能：
+    - 接收用户反馈，自动关联 trace_id 进行根因分析
+    - 如果提供了 trace_id，自动查询并附加 trace 摘要到反馈记录
+    - 存储反馈（内存 + 可扩展到数据库）
+
+    用户操作流程：
+    1. 遇到问题时，复制响应中的 trace_id
+    2. 访问反馈接口，粘贴 trace_id 并描述问题
+    3. 运维团队使用 trace_id 快速定位根因
+    """
+    feedback_id = secrets.token_hex(8)
+
+    # 附加 trace 信息（如果有 trace_id）
+    trace_info: dict[str, Any] | None = None
+    if req.trace_id:
+        try:
+            trace_info = audit_log.get_trace(req.trace_id) if hasattr(audit_log, "get_trace") else None
+            if trace_info is None:
+                # fallback: 直接查询
+                try:
+                    from tracing.trace_query import query as trace_query
+                    trace_info = trace_query.trace_full_chain(req.trace_id)
+                except Exception:
+                    trace_info = None
+        except Exception:
+            trace_info = None
+
+    # 记录反馈到审计日志
+    audit(
+        event="user_feedback",
+        api_key=auth.get("name", "unknown"),
+        data={
+            "feedback_id": feedback_id,
+            "trace_id": req.trace_id,
+            "description": req.description,
+            "contact": req.contact,
+            "tags": req.tags,
+            "trace_summary": trace_info.get("summary") if trace_info else None,
         },
+    )
+
+    # 如果提供了 trace_id，输出 trace 摘要到日志
+    if req.trace_id and trace_info:
+        try:
+            from tracing.trace_query import TraceQuery
+            tq = TraceQuery()
+            result = tq.trace_full_chain(req.trace_id)
+            logger.info(
+                f"[Feedback] trace_id={req.trace_id} | "
+                f"spans={result.total_spans} | "
+                f"errors={result.error_count} | "
+                f"duration={result.total_ms:.0f}ms"
+            )
+        except Exception:
+            pass
+
+    return FeedbackResponse(
+        feedback_id=feedback_id,
+        trace_id=req.trace_id,
+        status="received",
+        message="反馈已收到，我们会尽快处理。如有 trace_id，我们会根据链路记录进行根因分析。",
     )
 
 
