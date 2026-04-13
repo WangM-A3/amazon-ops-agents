@@ -3,7 +3,26 @@
 
 ---
 name: amazon-ops-silicon-army
-description: "亚马逊运营硅基军团 - 面向跨境电商卖家的Multi-Agent运营系统，1个幕僚长+20个专业Agent，覆盖选品/Listing优化/广告投放/库存管理/定价策略/评论管理/品牌保护/数据分析/客户服务/合规风控全链路"
+description: |
+  亚马逊运营硅基军团 — 面向跨境电商卖家的Multi-Agent运营系统
+  
+  ## 触发条件（满足任一即触发）
+  - 关键词：选品/List/广告/ACOS/PPC/FBA/Listing/跟卖/差评/VINE/品牌/利润/库存/定价/合规
+  - 场景：亚马逊运营、跨境电商、Amazon Seller、SP-API、广告优化、库存管理
+  - 动作：帮我分析/优化/查询/制定计划/回复差评/检测跟卖/计算利润
+  
+  ## 核心能力
+  - 20个专业Agent覆盖选品→Listing→广告→库存→定价→评论→品牌→数据→客服→合规全链路
+  - 幕僚长（ChiefOfStaff）智能任务分发 + 端云路由（LOCAL/SMALL/LARGE三引擎）
+  - 4个预置工作流（一键新品上架/广告优化/库存预警/客服）
+  - 三层安全防护（BLOCK/CONFIRM/AUDIT）
+  - 支持Helium 10/Jungle Scout/Keepa/船长ERP等第三方工具集成
+  
+  ## 使用方式
+  - 快速查询：「帮我查今天美国站销量」
+  - 任务执行：「分析无线蓝牙耳机能不能做」
+  - 工作流：「启动新品上架工作流」
+  - 主动预警：库存/差评/跟卖/ACOS异常自动推送
 metadata:
   openclaw:
     requires: ["python3>=3.10", "pip", "httpx", "fastapi", "uvicorn"]
@@ -138,38 +157,50 @@ metadata:
 
 ### 端云智能路由（v1.1新增）
 基于任务复杂度自动选择执行引擎：
-| 引擎 | 适用场景 | Token消耗 |
-|------|----------|-----------|
-| LOCAL | 数据提取、格式转换、统计计算 | **零** |
-| SMALL | 数据分析、报告生成、监控预警 | ~100 |
-| LARGE | 策略制定、创意生成、深度分析 | ~500 |
+
+```
+任务输入 → TaskRouter复杂度评分 → 引擎决策
+                                        ├─ LOCAL  → 本地Python（零Token）
+                                        ├─ SMALL  → 小模型Qwen-7B（~100Token）
+                                        └─ LARGE  → 大模型GPT-4（~500Token）
+```
 
 **核心优势**：
-- 简单任务本地执行，零Token消耗
+- 简单任务本地执行，零Token消耗（数据提取/格式转换/统计计算）
 - Agent级别引擎覆盖（如profit_calculator强制LOCAL）
 - 自动降级机制（LARGE→SMALL→LOCAL）
+- 全链路Token预估
+
+**实现文件**：`routing/task_router.py`（TaskRouter类）、`routing/local_executor.py`（LocalExecutor）
 
 ### GUI Agent三层安全防护（v1.1新增）
 | 层级 | 机制 | 示例操作 |
 |------|------|----------|
-| 应用层 | BLOCK | 删除Listing、批量取消订单 |
-| 系统层 | CONFIRM | 修改价格、发送消息、导出敏感数据 |
-| 驱动层 | AUDIT | 操作日志、凭证加密存储 |
+| 应用层 | BLOCK | 删除Listing、批量取消订单、删除评论 |
+| 系统层 | CONFIRM | 修改价格、发送买家消息、导出客户数据 |
+| 驱动层 | AUDIT | 操作日志全量记录、凭证加密存储 |
 
 **安全特性**：
-- 危险操作直接拦截
-- 敏感操作二次确认
-- 全量操作审计日志
-- CredentialVault凭证加密
+- 危险操作直接拦截（10类PROHIBITED_ACTIONS）
+- 敏感操作二次确认（5类CONFIRM_REQUIRED_ACTIONS）
+- 全量操作审计日志（GuardianResult + AuditLogEntry）
+- CredentialVault凭证加密（HMAC-SHA256）
+
+**实现文件**：`security/gui_guardian.py`（GUIGuardian类）
 
 ### 预置工作流（v1.1新增）
 一键启动端到端业务流程：
-| 工作流 | 步骤数 | 预估时长 |
-|--------|--------|----------|
-| 🆕 新品上架 | 4步 | 60s |
-| 📈 广告优化 | 4步 | 45s |
-| 📦 库存预警 | 5步 | 43s |
-| 💬 客户服务 | 4步 | 21s |
+
+| 工作流 | 步骤数 | 预估时长 | 说明 |
+|--------|--------|----------|------|
+| 🆕 新品上架 | 4步 | 60s | 选品→关键词→Listing→A+ |
+| 📈 广告优化 | 4步 | 45s | 数据→竞品→策略→ROI |
+| 📦 库存预警 | 5步 | 43s | FBA→预测→补货→供应→报告 |
+| 💬 客户服务 | 4步 | 21s | 分类→检索→回复→审核 |
+
+每个工作流提供：标准输入参数、预期输出格式、执行时间预估
+
+**实现文件**：`workflows/presets.py`（WorkflowEngine + 4个PresetWorkflow）
 
 ### 关键词路由表
 | 关键词 | Agent |
@@ -223,6 +254,13 @@ metadata:
 ## 六、版本说明
 
 - v1.0.0 初始版本，包含20个专业Agent
+- **v1.1.0 重大升级（2026-04-13）**：
+  - 端云智能路由（LOCAL/SMALL/LARGE三级引擎，零Token消耗）
+  - GUI Guardian三层安全防护（BLOCK/CONFIRM/AUDIT）
+  - 4个预置工作流（一键启动新品上架/广告优化/库存预警/客服）
+  - WorkflowEngine工作流引擎
+  - TaskRouter复杂度评分系统
+  - 全套单元测试（8个测试用例全部通过）
 - **基础版 ¥599/月**：选品/Listing/广告/库存/定价（5个核心Agent）
 - **专业版 ¥2999/月**：+评论/品牌/数据/客服/合规（10个Agent）
 - **企业版 ¥29999/月**：全部20个Agent + 定制开发 + 专属支持
