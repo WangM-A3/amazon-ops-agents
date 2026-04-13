@@ -55,7 +55,7 @@ class TraceQueryResult:
 
             name = s.get("name", "?")[:28]
             stype = s.get("type", "?")[:12]
-            dur = f"{s.get('duration_ms', 0):.1f}ms"
+            dur = f"{(s.get('duration_ms') or 0):.1f}ms"
             indent = "  └─" if s.get("parent_span_id") else "  ●"
             lines.append(
                 f"{indent} {name:<30} {stype:<12} {status_icon:<4} {dur:<10}  "
@@ -81,7 +81,7 @@ class TraceQueryResult:
             lines = []
             for s in children_map.get(span_id, []):
                 status_icon = "✅" if s.get("status") == "ok" else "❌"
-                dur = f"{s.get('duration_ms', 0):.1f}ms"
+                dur = f"{(s.get('duration_ms') or 0):.1f}ms"
                 err = f" ⚠ {(s.get('error') or '')[:30]}" if s.get('error') else ""
                 lines.append(
                     f"{indent}{status_icon} [{s.get('span_id', ''):<14}] "
@@ -123,7 +123,7 @@ class TraceQueryResult:
                 f"| {i} | `{s.get('span_id', '')}` | "
                 f"{s.get('name', '')} | {s.get('type', '')} | "
                 f"{s.get('status', '')} | "
-                f"{s.get('duration_ms', 0):.1f}ms |"
+                f"{(s.get('duration_ms') or 0):.1f}ms |"
             )
 
         return "\n".join(parts)
