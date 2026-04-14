@@ -50,12 +50,16 @@ class RetryConfig:
     base_delay: float = 1.0     # 基础延迟（秒）
     max_delay: float = 60.0     # 最大延迟
     jitter_range: tuple[float, float] = (0.0, 1.0)  # 抖动范围
-    retryable_categories: set[ErrorCategory] = field(default_factory=lambda={
-        ErrorCategory.NETWORK, ErrorCategory.TIMEOUT, ErrorCategory.EXTERNAL,
-    })
-    fatal_categories: set[ErrorCategory] = field(default_factory=lambda={
-        ErrorCategory.VALIDATION, ErrorCategory.AUTH, ErrorCategory.INTERNAL,
-    })
+    retryable_categories: set[ErrorCategory] = field(
+        default_factory=lambda: {
+            ErrorCategory.NETWORK, ErrorCategory.TIMEOUT, ErrorCategory.EXTERNAL,
+        }
+    )
+    fatal_categories: set[ErrorCategory] = field(
+        default_factory=lambda: {
+            ErrorCategory.VALIDATION, ErrorCategory.AUTH, ErrorCategory.INTERNAL,
+        }
+    )
 
 
 # =============================================================================
