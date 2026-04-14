@@ -1,6 +1,14 @@
-# 企业级智能体集群系统
+# 企业级智能体集群系统 v2.0
 
 > 基于 **1+N** 架构的智能体协作系统，参考 OpenClaw Main Agent、腾讯ADP Router、智己汽车研发设计集群
+
+## 核心升级（v2.0）
+
+本次更新根据用户评测反馈进行了三大改进：
+
+1. **真实API接入层**：适配器模式支持多ERP系统接入（SAP/用友/金蝶等），保留模拟数据用于开发/演示
+2. **跨Agent协作流程细化**：细粒度任务协议、状态同步、链路追踪、并行/串行混合执行引擎
+3. **错误处理和状态管理**：统一异常中间件、任务状态机（pending→running→success/failed/retry）、重试策略、操作日志
 
 ## 系统架构
 
@@ -26,40 +34,69 @@
 └───────┬───────┘ └──────┬──────┘ └───────┬───────┘ └───────┬───────┘
         │                 │                 │                 │
         ▼                 ▼                 ▼                 ▼
-┌───────────────┐ ┌─────────────┐ ┌───────────────┐ ┌───────────────┐
-│  ERP Server   │ │ 物流三方API  │ │ SRM Server    │ │ 财务系统API   │
-│  WMS Server   │ │ (顺丰/圆通) │ │  ERP Server   │ │               │
-└───────────────┘ └─────────────┘ └───────────────┘ └───────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│          API Integration Layer（新增 v2.0）                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
+│  │ SAP适配器    │  │ 用友适配器   │  │ 健康监控+断路器  │   │
+│  │ 金蝶适配器   │  │ 通用REST    │  │ 故障自动降级     │   │
+│  └──────────────┘  └──────────────┘  └──────────────────┘   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ Mock Data（开发/演示模式，variance=0.1随机波动）        │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## 目录结构
 
 ```
 agent-cluster/
-├── orchestrator.py          # 指挥智能体（核心调度器）
-├── README.md                # 本文件
+├── __init__.py                   # 包入口（v2.0）
 │
-├── specialists/              # 专业智能体
-│   ├── inventory_agent.py   # 库存智能体
-│   ├── logistics_agent.py   # 物流智能体
-│   ├── procurement_agent.py # 采购智能体
-│   ├── finance_agent.py     # 财务智能体
-│   └── doc_agent.py         # 工艺文档智能体
+├── orchestrator.py               # 指挥智能体（核心调度器）
+├── README.md                     # 本文件
 │
-├── mcp_servers/             # MCP协议封装
-│   ├── erp_server.py        # ERP系统接口
-│   ├── wms_server.py        # WMS仓库管理接口
-│   └── srm_server.py        # SRM供应商管理接口
+├── api_integration/              # 【新增】真实API接入层
+│   ├── __init__.py
+│   ├── api_adapter.py           # 多ERP适配器（SAP/用友/金蝶）
+│   ├── api_config.py            # 配置化管理（环境变量/YAML）
+│   ├── api_health.py            # 健康检查+断路器+告警
+│   └── mock_data.py            # 模拟数据（开发/演示模式）
 │
-├── safety/                  # 安全围栏
-│   ├── permission_manager.py # RBAC权限管理
-│   ├── audit_logger.py       # 全链路审计日志
-│   └── human_loop.py         # 人机回环审批
+├── collaboration/                # 【新增】跨Agent协作流程
+│   ├── __init__.py
+│   ├── task_protocol.py         # 细粒度任务协议（TaskMessage）
+│   ├── state_sync.py            # Agent间状态同步+TTL+订阅通知
+│   ├── trace_tracker.py         # 协作链路追踪+Mermaid时序图
+│   └── workflow_engine.py        # 混合执行引擎（串行/并行/混合）
 │
-└── config/                  # 配置文件
-    ├── agents.yaml          # 智能体定义
-    ├── workflows.yaml       # 工作流配置
-    └── permissions.yaml     # 权限矩阵
+├── error_handling/              # 【新增】错误处理与状态管理
+│   ├── __init__.py
+│   ├── task_state_machine.py    # 任务状态机（7种状态+转换规则）
+│   ├── exception_middleware.py  # 统一异常处理+分类+告警
+│   ├── retry_policy.py          # 重试策略（5种）+条件重试
+│   └── operation_log.py        # 操作日志+脱敏+合规报告
+│
+├── specialists/                 # 专业智能体
+│   ├── inventory_agent.py      # 库存智能体
+│   ├── logistics_agent.py       # 物流智能体
+│   ├── procurement_agent.py     # 采购智能体
+│   ├── finance_agent.py         # 财务智能体
+│   └── doc_agent.py            # 工艺文档智能体
+│
+├── mcp_servers/                 # MCP协议封装
+│   ├── erp_server.py           # ERP系统接口
+│   ├── wms_server.py           # WMS仓库管理接口
+│   └── srm_server.py           # SRM供应商管理接口
+│
+├── safety/                      # 安全围栏
+│   ├── permission_manager.py    # RBAC权限管理
+│   ├── audit_logger.py          # 全链路审计日志
+│   └── human_loop.py            # 人机回环审批
+│
+└── config/                     # 配置文件
+    ├── agents.yaml             # 智能体定义
+    ├── workflows.yaml          # 工作流配置
+    └── permissions.yaml        # 权限矩阵
 ```
 
 ## 快速开始
@@ -67,9 +104,9 @@ agent-cluster/
 ### 环境要求
 
 - Python 3.10+
-- 依赖包（可选）：
+- 依赖包：
   ```bash
-  pip install pyyaml fastapi uvicorn httpx
+  pip install pyyaml fastapi uvicorn httpx aiofiles
   ```
 
 ### 运行演示
@@ -85,9 +122,251 @@ python -m specialists.procurement_agent
 python -m specialists.finance_agent
 ```
 
+---
+
+## API接入层详解（v2.0新增）
+
+### 支持的ERP类型
+
+| ERP类型 | 适配器 | API协议 | 配置示例 |
+|---------|--------|---------|---------|
+| SAP S/4HANA | `SAPERPAdapter` | OData/REST | `SAP_BASE_URL` |
+| 用友U8/NC/YonBIP | `YonyouERPAdapter` | REST API | `YONYOU_BASE_URL` |
+| 金蝶K3 Cloud/EAS | `KingdeeERPAdapter`（可扩展） | REST API | `KINGDEE_BASE_URL` |
+| 通用REST | `CustomRESTAdapter`（可扩展） | OpenAPI | `CUSTOM_BASE_URL` |
+| 模拟模式 | `MockDataGenerator` | - | `SYSTEM_MODE=demo` |
+
+### 配置方式
+
+**方式1：环境变量**
+```bash
+export SYSTEM_MODE=demo          # demo/production/development
+export SAP_BASE_URL=https://sap.example.com
+export SAP_API_KEY=your_api_key
+export YONYOU_BASE_URL=https://yonyou.example.com
+export YONYOU_APPKEY=your_appkey
+```
+
+**方式2：YAML配置文件**
+```yaml
+system:
+  mode: demo
+  log_level: INFO
+  enable_trace: true
+  demo_variance: 0.1
+
+erp_systems:
+  - name: sap_primary
+    erp_type: sap
+    is_primary: true
+    base_url: https://sap.example.com
+    auth_type: bearer
+    api_key: ${SAP_API_KEY}
+    timeout: 30.0
+    circuit_breaker_threshold: 5
+```
+
+### 代码示例
+
+```python
+from api_integration import APIConfigManager, MockDataGenerator
+
+# 自动从环境变量加载配置
+config = APIConfigManager.from_env()
+
+# 演示模式使用模拟数据
+if config.system.mode == "demo":
+    mock = MockDataGenerator(variance=0.1)
+    response = mock.query_inventory(sku="SKU001")
+    print(response.data)
+```
+
+---
+
+## 协作流程详解（v2.0新增）
+
+### 细粒度任务协议
+
+```python
+from collaboration import TaskMessage, TaskContext, TaskPriority, TaskMode
+
+# 创建任务消息
+task = TaskMessage(
+    agent_name="inventory_agent",
+    action="query_stock",
+    parameters={"sku": "SKU001", "warehouse": "华东仓"},
+    priority=TaskPriority.HIGH,
+    mode=TaskMode.SERIAL,
+    timeout_seconds=30.0,
+    max_retries=3,
+    dependency=TaskDependency(
+        depends_on=["task_001", "task_002"],  # 依赖的任务ID
+        blocking=True,
+        shared_context=["budget_summary"],     # 需要共享的上下文
+    ),
+    context=TaskContext(request_id="REQ001", trace_id="trace_xxx"),
+)
+```
+
+### 状态同步
+
+```python
+from collaboration import SharedStateManager
+
+state = SharedStateManager(agent_id="inventory_agent")
+
+# 设置状态（TTL=300秒）
+await state.set("inventory:SKU001", {"qty": 450}, ttl_seconds=300)
+
+# 订阅变更
+state.subscribe(
+    "inventory:*",
+    lambda key, value, entry: print(f"库存更新: {key}={value}"),
+    subscriber="logistics_agent",
+)
+```
+
+### 链路追踪（Mermaid时序图）
+
+```python
+from collaboration import CollaborationTracker
+
+tracker = CollaborationTracker()
+trace_id = tracker.start_trace("REQ001", user_input="查询库存")
+
+# 执行任务并记录
+span = tracker.start_span(trace_id, "inventory_agent:query_stock", SpanType.AGENT)
+# ... 执行逻辑 ...
+tracker.end_span(span, status="ok")
+
+# 导出Mermaid时序图
+print(tracker.to_mermaid_sequence(trace_id))
+```
+
+输出示例：
+```mermaid
+sequenceDiagram
+    participant 用户
+    participant inventory_agent
+    participant erp_system
+    用户->>+inventory_agent: query_stock(SKU001)
+    inventory_agent->>+erp_system: GET /api/stock
+    erp_system-->>-inventory_agent: {qty: 450}
+    inventory_agent-->>-用户: {status: ok}
+```
+
+---
+
+## 错误处理详解（v2.0新增）
+
+### 状态机
+
+```python
+from error_handling import TaskStateMachine, State
+
+sm = TaskStateMachine(auto_retry=True, default_max_retries=3)
+
+# 创建任务
+task = sm.create_task("task_001", "查询库存", "inventory_agent")
+
+# 状态转换（自动校验合法性）
+sm.start("task_001")         # pending → running
+sm.succeed("task_001", result={"qty": 450})  # → success
+
+# 失败时自动重试（指数退避）
+sm.fail("task_001", "网络超时")
+# → running → retry（第1次，1s后）→ running → ...
+# → running → retry（第3次，8s后）→ running → ...
+# → failed（超过最大重试次数）
+```
+
+### 统一异常处理
+
+```python
+from error_handling import ExceptionMiddleware, handle_exceptions
+
+middleware = ExceptionMiddleware()
+
+try:
+    # ERP API调用
+    response = await adapter.query_inventory(sku="SKU001")
+except Exception as e:
+    error = middleware.handle(e, source="inventory_agent", request_id="REQ001")
+    print(error.to_dict())
+    # {
+    #   "error_id": "a1b2c3d4",
+    #   "category": "network",
+    #   "severity": "high",
+    #   "message": "无法连接到ERP系统",
+    #   "suggestion": "请检查网络连接，ERP系统是否可达，可尝试重试",
+    #   "retry_recommended": true
+    # }
+```
+
+### 重试策略
+
+```python
+from error_handling import RetryExecutor, RetryConfig, RetryStrategy
+
+config = RetryConfig(
+    max_attempts=5,
+    strategy=RetryStrategy.EXP_JITTER,  # AWS推荐：指数+抖动
+    base_delay=1.0,
+    max_delay=60.0,
+)
+
+executor = RetryExecutor(config)
+result = await executor.execute(
+    lambda: call_erp_api(),
+    on_retry=lambda attempt, exc: alert(f"重试第{attempt}次: {exc}"),
+)
+```
+
+### 操作日志
+
+```python
+from error_handling import OperationLogger
+
+logger = OperationLogger(log_dir="logs", compress=True)
+
+logger.agent_start("inventory_agent", "REQ001", trace_id="trace_xxx")
+logger.agent_end("inventory_agent", "REQ001", duration_ms=230.5, success=True)
+
+# 生成合规报告
+report = logger.generate_report(start_date=datetime(2026, 4, 1))
+print(report)
+```
+
+---
+
+## 错误处理和状态管理详解
+
+### 状态转换规则
+
+```
+CREATED → PENDING → RUNNING → SUCCESS
+                      ├→ FAILED → RETRY → RUNNING（最多N次）
+                      ├→ TIMEOUT → RETRY → RUNNING（最多N次）
+                      └→ CANCELLED（终态）
+```
+
+### 错误分类
+
+| 分类 | 说明 | 是否可重试 |
+|------|------|-----------|
+| `validation` | 参数校验错误 | ❌ |
+| `network` | 网络/连接错误 | ✅ |
+| `timeout` | 超时错误 | ✅ |
+| `auth` | 认证/权限错误 | ❌ |
+| `not_found` | 资源不存在 | ❌ |
+| `external` | 外部依赖错误 | ✅ |
+| `internal` | 内部错误 | ❌ |
+
+---
+
 ## 核心模块详解
 
-### 1. 指挥智能体 (orchestrator.py)
+### 指挥智能体 (orchestrator.py)
 
 **职责**：不直接干活，只做调度
 
@@ -98,255 +377,19 @@ python -m specialists.finance_agent
 **意图识别示例**：
 
 | 用户输入 | 识别意图 | 调度智能体 |
-|---------|---------|-----------|
-| "查询SKU001库存" | stock_query | inventory_agent |
-| "向SUP001采购轴承" | purchase | procurement_agent, finance_agent |
-| "查下物流运费" | logistics | logistics_agent |
-| "帮我查库存，缺货就补货" | mixed | inventory + procurement |
+|----------|----------|-----------|
+| "SKU001还有多少库存" | stock_query | inventory_agent |
+| "帮我采购一批传感器" | purchase | procurement_agent + finance_agent |
+| "货物到哪了" | logistics | logistics_agent |
+| "华东仓库存低于安全水位" | replenishment | inventory + procurement + finance |
+| "采购+物流全程跟踪" | procurement_with_logistics | procurement + logistics + finance |
 
-**支持协作模式**：
+### 专业智能体职责
 
-```python
-# 串行：指挥 → 查库存 → 判断 → 触发采购
-# 并行：同时呼叫物流 + 财务 → 综合决策
-```
-
-### 2. 专业智能体
-
-#### 库存智能体 (inventory_agent.py)
-
-```python
-agent = InventoryAgent(user_role="warehouse_operator")
-result = await agent.query_stock(sku="SKU001")
-# → 返回: 库存量、状态、告警、补货建议
-```
-
-核心能力：
-- 多维度库存查询（SKU/仓库/状态）
-- 安全库存计算（统计学公式：SS = Z × σ × √LT）
-- 补货建议自动生成
-- 低库存告警
-
-#### 物流智能体 (logistics_agent.py)
-
-```python
-agent = LogisticsAgent()
-result = await agent.query_freight(
-    origin="上海", destination="北京", weight=500
-)
-# → 返回: 多承运商报价、最优路线规划
-```
-
-核心能力：
-- 运费多承运商比较
-- 物流路线规划（碳排放、成本）
-- 实时物流追踪
-
-#### 采购智能体 (procurement_agent.py)
-
-```python
-agent = ProcurementAgent(user_role="procurement_manager")
-result = await agent.place_order(
-    supplier_id="SUP001",
-    items=[{"sku": "SKU001", "quantity": 100, "unit_price": 50}],
-)
-# → 返回: 订单ID，触发人机审批（金额>5万）
-```
-
-核心能力：
-- 供应商智能推荐（综合评分）
-- 采购申请创建
-- **高风险**：金额>5万自动触发人机回环审批
-
-#### 财务智能体 (finance_agent.py)
-
-```python
-agent = FinanceAgent(user_role="finance_manager")
-result = await agent.audit_payment(
-    payment_id="PAY001", amount=8000,
-    payee="华东轴承有限公司",
-)
-# → 返回: 自动审核结果（规则引擎）
-```
-
-核心能力：
-- 预算查询与分析
-- 付款自动审核（风险评分）
-- 财务报表生成
-
-#### 工艺文档智能体 (doc_agent.py)
-
-```python
-agent = DocumentAgent(user_role="procurement_manager")
-result = await agent.generate_process_sheet(item_id="BOM-ASSY-001")
-# → 返回: 工艺卡文档（含工序、物料、BOM）
-```
-
-核心能力：
-- 截图填表（OCR字段提取）
-- 工艺卡/BOM/采购申请单生成
-- PLM系统集成
-
-### 3. MCP协议封装
-
-基于 Model Context Protocol 标准接口：
-
-```python
-# 工具注册
-"erp.query_stock"          # 库存查询
-"erp.calculate_safety_stock" # 安全库存
-"srm.search_suppliers"     # 供应商搜索
-"wms.transfer_stock"       # 库位调拨
-```
-
-每个MCP Server实现：
-- 工具注册表
-- 参数校验
-- 异步执行
-- 错误处理
-
-### 4. 安全围栏
-
-#### 权限管理 (permission_manager.py)
-
-```python
-# RBAC矩阵示例
-admin          → 所有权限
-procurement_manager → 采购+库存查询
-warehouse_operator  → 库存操作
-viewer             → 只读权限
-```
-
-#### 审计日志 (audit_logger.py)
-
-```python
-# 追踪能力
-- trace_id/span_id 全链路追踪
-- PII自动脱敏（邮箱/手机/身份证/银行卡）
-- SOC 2 合规报告生成
-- 慢操作告警 (>5s)
-```
-
-#### 人机回环 (human_loop.py)
-
-```python
-# 风险评估触发审批
-RiskLevel.LOW     → 自动批准
-RiskLevel.MEDIUM  → 记录日志
-RiskLevel.HIGH    → 人工审批
-RiskLevel.CRITICAL → 严谨审批
-
-# 支持渠道：控制台/飞书/邮件/Webhook
-```
-
-## 配置说明
-
-### agents.yaml - 智能体定义
-
-```yaml
-orchestrator:
-  name: "企业智能调度中心"
-  model: "混元-pro"
-  capabilities:
-    - intent_understanding
-    - task_decomposition
-```
-
-### workflows.yaml - 工作流配置
-
-```yaml
-stock_replenishment:
-  steps:
-    - agent: inventory_agent
-      action: query_stock
-    - agent: procurement_agent
-      action: place_order
-      condition: "needs_replenishment"
-      requires_approval: true
-```
-
-### permissions.yaml - 权限矩阵
-
-```yaml
-roles:
-  procurement_manager:
-    permissions:
-      - procurement_agent.place_order  # 金额阈值触发审批
-      - finance_agent.query_budget
-```
-
-## 生产部署建议
-
-### 1. 模型层接入
-
-```python
-# 意图识别可替换为LLM调用
-class IntentRecognizer:
-    async def recognize(self, text: str) -> Intent:
-        # 调用混元/文心/开源模型
-        response = await llm.chat(
-            model="混元-pro",
-            messages=[{"role": "user", "content": f"识别意图: {text}"}]
-        )
-        return parse_intent(response)
-```
-
-### 2. MCP Server接入
-
-```python
-# 替换模拟数据为真实ERP/SRM API
-class ERPService:
-    async def query_stock(self, sku: str):
-        # 真实ERP API调用
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"https://erp.company.com/api/stock/{sku}",
-                headers={"Authorization": f"Bearer {api_token}"}
-            )
-            return resp.json()
-```
-
-### 3. 高可用部署
-
-```bash
-# Docker Compose 部署
-services:
-  orchestrator:
-    image: agent-cluster:latest
-    ports: ["8080:8080"]
-
-  mcp-erp:
-    image: erp-mcp-server:latest
-    ports: ["8081:8081"]
-
-  mcp-srm:
-    image: srm-mcp-server:latest
-    ports: ["8082:8082"]
-```
-
-### 4. 监控接入
-
-```python
-# Prometheus 指标
-metrics = {
-    "agent_requests_total": Counter,
-    "agent_latency_seconds": Histogram,
-    "approval_pending_gauge": Gauge,
-    "active_sessions": Gauge,
-}
-```
-
-## 安全设计
-
-| 维度 | 措施 |
-|------|------|
-| 认证 | JWT Token + 角色绑定 |
-| 授权 | RBAC 权限矩阵 |
-| 审计 | 全链路JSONL日志 + SOC2报告 |
-| 数据 | PII自动脱敏 |
-| 审批 | 人机回环（高风险操作）|
-| 网络 | MCP四层隔离 |
-
-## License
-
-MIT
+| 智能体 | 职责 | 关键词 |
+|--------|------|--------|
+| `inventory_agent` | 库存查询、安全水位计算、补货建议 | 库存/安全水位/补货 |
+| `procurement_agent` | 供应商查询、询价、下单跟踪 | 采购/供应商/下单 |
+| `logistics_agent` | 物流计划、运费计算、轨迹追踪 | 物流/运费/发货 |
+| `finance_agent` | 预算查询、付款审核、成本分析 | 财务/预算/付款 |
+| `doc_agent` | 工艺文档、BOM表生成 | 文档/工艺/BOM |
