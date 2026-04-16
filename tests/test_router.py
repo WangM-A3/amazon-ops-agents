@@ -219,7 +219,8 @@ def test_gui_guardian_three_layers():
             allowed += 1
 
     # ── 用户确认后状态转换 ───────────────────────────────────────────────────
-    confirm_result = guardian.authorize(action="generic", task="把某产品价格调整到15.99")
+    # 必须用匹配CONFIRM_REQUIRED_ACTIONS的action+关键词组合
+    confirm_result = guardian.authorize(action="modify_price", task="帮我调价到15.99美元")
     assert confirm_result.level == SecurityLevel.CONFIRM
     token = confirm_result.confirm_token
 

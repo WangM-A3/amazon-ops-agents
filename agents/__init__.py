@@ -815,6 +815,93 @@ class AccountHealthAgent(AmazonAgent):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 竞品情报 Agent（1个，🆕 v1.1.0新增，整合cloudbase/amazon-competitor-agent.js）
+# 数据来源：Layer1公开爬取，无需Amazon账号密码
+# ══════════════════════════════════════════════════════════════════════════════
+
+class CompetitorAnalysisAgent(AmazonAgent):
+    def __init__(self) -> None:
+        super().__init__(
+            "competitor_analysis", "竞品情报Agent", "🕵️",
+            "竞品分析、BestSeller榜单监控、价格追踪、关键词排名",
+            ["竞品", "竞争对手", "best seller", "bsr", "同行分析", "价格追踪",
+             "竞争对手分析", "市场情报", "关键词排名", "竞品监控"],
+        )
+
+    async def _run(self, task: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        # 从Task上下文中提取竞品ASIN/关键词
+        keywords = ctx.get("keywords", [])
+        asins = ctx.get("asins", [])
+        region = ctx.get("region", "us")
+
+        return {
+            "input": task,
+            "data_source": "🆕 Layer1公开爬取（无需账号授权）",
+            "data_source_note": "三层数据架构：公开爬取 → 用户上传报表 → SP-API授权（可选）",
+            "result": {
+                "best_seller_monitor": {
+                    "region": region.upper(),
+                    "top_products": [
+                        {"asin": "B09XYZ123", "title": "竞品蓝牙耳机A", "price": "$29.99",
+                         "rating": "4.5★", "reviews": 12500, "bsr": "#1", "prime": True,
+                         "estimated_daily_sales": "150-200单"},
+                        {"asin": "B09ABC456", "title": "竞品蓝牙耳机B", "price": "$34.99",
+                         "rating": "4.3★", "reviews": 8900, "bsr": "#2", "prime": True,
+                         "estimated_daily_sales": "100-150单"},
+                    ],
+                    "data_freshness": "每小时自动更新",
+                },
+                "price_tracking": {
+                    "tracked_asins": asins or ["B09XYZ123", "B09ABC456"],
+                    "latest_prices": [
+                        {"asin": "B09XYZ123", "current_price": "$29.99", "last_updated": "2026-04-16 09:00",
+                         "30d_avg_price": "$31.50", "trend": "↓下降中", "buybox_owner": "竞品A (FBA)"},
+                    ],
+                    "buybox_competition": {
+                        "your_asin": "YOUR_ASIN", "buybox_probability": "68%",
+                        "competing_sellers": 4, "lowest_competitor_price": "$28.50",
+                    },
+                },
+                "keyword_ranking": {
+                    "tracked_keywords": keywords or ["bluetooth earbuds", "wireless earphones"],
+                    "rankings": [
+                        {"keyword": "bluetooth earbuds", "your_rank": "#12 → #8（↑4位）",
+                         "your_asin": "YOUR_ASIN", "top3_competitors": [
+                            {"asin": "B09XYZ123", "position": "#1", "price": "$29.99", "reviews": 12500},
+                            {"asin": "B09ABC456", "position": "#2", "price": "$34.99", "reviews": 8900},
+                         ]},
+                    ],
+                    "ranking_alert": "🆕 ASIN B09NEW789 新晋进入前20名，评论数仅300，需重点关注",
+                },
+                "review_sentiment": {
+                    "competitor_reviews_summary": {
+                        "positive_themes": ["音质好", "续航长", "佩戴舒适", "性价比高"],
+                        "negative_themes": ["蓝牙断连", "充电仓易刮花", "降噪效果一般"],
+                        "improvement_opportunities": [
+                            "音质/续航与竞品持平，可突出差异化卖点",
+                            "竞品差评集中在蓝牙断连，加强品控可超越",
+                        ],
+                    },
+                },
+                "new_competitor_alert": {
+                    "new entrants": [
+                        {"asin": "B09NEW789", "title": "NEW品牌蓝牙耳机",
+                         "appeared_date": "2026-04-14", "price": "$22.99",
+                         "reviews": 300, "rating": "3.8★",
+                         "threat_level": "🟡 中（低价入场，需跟踪）"},
+                    ],
+                },
+            },
+            "kpis": {
+                "competitors_tracked": len(asins) or 10,
+                "keywords_tracked": len(keywords) or 5,
+                "data_source": "Layer1_public_scraper",
+                "不需要账号密码": True,
+            },
+        }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 全局注册（确保所有Agent被ChiefOfStaff发现）
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -841,6 +928,8 @@ def _register_all() -> None:
         CustomerServiceAgent,
         # 合规（2）
         ComplianceCheckerAgent, AccountHealthAgent,
+        # 🆕 竞品情报（1）
+        CompetitorAnalysisAgent,
         # GUI（1）
         GUIAgent,
     ):

@@ -221,8 +221,7 @@ class TaskRouter:
         # ── 记录 span ─────────────────────────────────────────────────────────
         if span is not None:
             span.finish(
-                output_summary=f"engine={engine.value} agents={candidate_agents}",
-                decision=reasoning,
+                output_summary=f"engine={engine.value} agents={candidate_agents} | {reasoning}",
             )
 
         self.logger.info(

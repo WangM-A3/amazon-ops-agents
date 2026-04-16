@@ -108,9 +108,9 @@ class ChiefOfStaff:
         # ── 创建 / 恢复 TraceContext ──────────────────────────────────────────
         if tm:
             TraceContext_cls, SpanStatus_cls, SpanType_cls, _ = tm
-            trace_ctx = TraceContext_cls.start(
-                name=trace_root_name or f"chief[{task[:30]}]",
+            trace_ctx = TraceContext_cls(
                 trace_id=trace_id,
+                root_name=trace_root_name or f"chief[{task[:30]}]",
             )
             scope = trace_ctx.span(
                 "ChiefOfStaff.execute", SpanType_cls.CHIEF,
@@ -192,7 +192,6 @@ class ChiefOfStaff:
                     if agent_span is not None:
                         agent_span.finish(
                             output_summary=str(result)[:200],
-                            metadata={"tokens": tokens},
                         )
                         trace_ctx.record_agent(
                             aid, task, result, tokens=tokens, success=True,

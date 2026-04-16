@@ -431,10 +431,13 @@ class MCPAuditor:
         审计一次MCP工具调用
 
         执行流程：
-        1. 白名单检查 → 直接允许（仅记录）
-        2. 漏洞扫描（参数） → CRITICAL立即阻止
+        1. 漏洞扫描（无条件，先于白名单） → CRITICAL立即阻止
+        2. 白名单检查 → 工具在白名单则记录并允许（但已通过扫描）
         3. 权限边界检查 → 不在边界内则阻止
         4. 记录完整审计日志
+
+        [安全修复 2026-04-14] 白名单不再绕过漏洞扫描，防止白名单工具名
+        被注入时绕过命令注入检测。
         """
         entry = MCPAuditEntry(
             event_type="tool_call",
@@ -444,14 +447,9 @@ class MCPAuditor:
             user_id=user_id,
         )
 
-        # Step 1: 白名单检查
-        if self.scanner.check_tool_allowed(tool_name):
-            entry.result = "ALLOWED"
-            entry.details = "tool_in_whitelist"
-            entry.risk_score = 0.0
-            return self.logger.log(entry)
-
-        # Step 2: 漏洞扫描
+        # Step 1: 漏洞扫描（无条件，先于白名单）
+        # [FIX] 原逻辑：白名单通过 → 直接返回，绕过漏洞扫描
+        # [修复后]：即使白名单工具也必须先通过漏洞扫描
         findings = self.scanner.scan_args(tool_name, args)
         if findings:
             critical = [f for f in findings if f["level"] == VulnerabilityLevel.CRITICAL.value]
@@ -466,6 +464,13 @@ class MCPAuditor:
             entry.vulnerability_level = findings[0]["level"]
             entry.details = json.dumps(findings, ensure_ascii=False)
             entry.risk_score = self._score_findings(findings)
+
+        # Step 2: 白名单检查（仅在通过扫描后生效）
+        if self.scanner.check_tool_allowed(tool_name):
+            entry.result = "ALLOWED"
+            entry.details = "tool_in_whitelist"
+            entry.risk_score = 0.0
+            return self.logger.log(entry)
 
         # Step 3: 权限边界检查
         boundary_result = self.boundary.check(
@@ -561,7 +566,17 @@ class MCPAuditor:
     def _sanitize_args(self, args: dict[str, Any]) -> dict[str, Any]:
         """脱敏敏感参数"""
         sanitized = {}
-        SENSITIVE_KEYS = {"api_key", "token", "secret", "password", "auth"}
+        # [FIX 2026-04-14] 扩展敏感字段覆盖范围（case-insensitive, 包含大小写变体）
+        SENSITIVE_KEYS = {
+            "api_key", "api-key", "apikey", "api_key_v", "api_key_v1", "api_key_v2",
+            "token", "access_token", "access-token", "session_token", "session-token",
+            "refresh_token", "bearer", "bearer_token",
+            "secret", "secret_key", "secret_key_v", "app_secret",
+            "password", "passwd", "pwd",
+            "auth", "authorization", "authorisation",
+            "private_key", "privatekey", "client_secret",
+            "mcp_server_api_key", "agent_auth_api_key",
+        }
         for k, v in args.items():
             if any(s in k.lower() for s in SENSITIVE_KEYS):
                 sanitized[k] = "[REDACTED]"

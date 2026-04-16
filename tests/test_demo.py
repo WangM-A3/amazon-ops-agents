@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import pytest
 import json
 import sys
 from datetime import datetime
@@ -39,6 +40,7 @@ def test_agent_registration():
 
 
 # ─── 测试2: ChiefOfStaff路由 ──────────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_chief_routing():
     """测试幕僚长关键词路由"""
     from agents.chief import CHIEF
@@ -72,6 +74,7 @@ async def test_chief_routing():
 
 
 # ─── 测试3: Agent执行验证 ──────────────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_agent_execution():
     """测试至少3个核心Agent的输出格式"""
     from agents.base import AGENTS
@@ -102,6 +105,7 @@ async def test_agent_execution():
 
 
 # ─── 测试4: ChiefOfStaff并行调度 ──────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_chief_parallel():
     """测试幕僚长并行调度"""
     from agents.chief import CHIEF
@@ -125,6 +129,7 @@ async def test_chief_parallel():
 
 
 # ─── 测试5: JSON输出格式验证 ────────────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_json_output():
     """验证API返回JSON可序列化"""
     from agents.chief import CHIEF
@@ -142,6 +147,7 @@ async def test_json_output():
 
 
 # ─── 测试6: GUI Agent模拟模式 ─────────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_gui_agent():
     """测试GUI Agent SIMULATE模式"""
     from agents.gui_agent import GUIAgent
@@ -164,6 +170,7 @@ async def test_gui_agent():
 
 
 # ─── 测试7: 工作流引擎 ─────────────────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_workflow_engine():
     """测试工作流引擎"""
     from agents.chief import CHIEF
@@ -226,6 +233,7 @@ def test_context_manager():
 
 
 # ─── 测试9: CLI Demo ───────────────────────────────────────────────────────────
+@pytest.mark.asyncio
 async def test_cli_demo():
     """CLI演示测试"""
     from agents.chief import CHIEF

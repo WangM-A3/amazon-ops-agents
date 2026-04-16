@@ -30,6 +30,7 @@ TASK_ROUTING: dict[str, list[str]] = {
     "customer_service":    ["客服","买家消息","退货","回复","售后","问询"," cs message"],
     "compliance_checker":  ["合规","政策","审核","类目","认证","法规"," regulation"],
     "account_health":      ["账号","odr","健康度","绩效","预警","账户","违规"," account health"],
+    "competitor_analysis": ["竞品","竞争对手","best seller","bsr","同行","竞品分析","价格追踪","竞争对手分析"," competitor"],
 }
 
 AGENT_REGISTRY: dict[str, dict[str, Any]] = {}

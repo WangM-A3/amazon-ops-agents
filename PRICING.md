@@ -15,6 +15,10 @@
 ### 基础版 ¥599/月
 适合新手卖家，覆盖亚马逊运营核心场景，以最低成本建立AI运营体系。
 
+**🆕 所有版本标配：不需要Amazon账号密码（三层数据架构）**
+> Layer 1：公开数据爬取（无需授权）→ Layer 2：用户主动上传报表 → Layer 3：SP-API OAuth授权（可选）
+> 彻底消除账号安全顾虑，亚马逊卖家最担心的"账号关联封号"风险降至零。
+
 - ✅ 5个核心专业Agent
   - ProductResearchAgent（选品分析）
   - ListingOptimizerAgent（Listing优化）
@@ -56,6 +60,7 @@
 - ✅ API 调用（5000次/月）
 - ✅ 第三方工具集成（Helium 10 / Jungle Scout / Keepa）
 - ✅ 主动预警（库存/差评/跟卖/ACOS/ODR）
+- ✅ **IM远程调度**（飞书/微信/WhatsApp，微信一句话指挥Agent）
 - ✅ 优先技术支持（工作日8h响应）
 - ❌ 私有部署
 - ❌ 定制开发
