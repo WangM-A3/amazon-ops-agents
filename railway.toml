@@ -1,0 +1,70 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Railway.toml — 亚马逊运营硅基军团 Railway 部署配置
+# ══════════════════════════════════════════════════════════════════════════════
+# 放置于 amazon-ops-agents/ 目录
+#
+# Railway 部署步骤：
+# 1. 注册 Railway 账号：https://railway.app
+# 2. 安装 Railway CLI：npm install -g @railway/cli
+# 3. 登录：railway login
+# 4. 初始化项目：cd amazon-ops-agents && railway init
+# 5. 添加环境变量（从 .env.example 复制并填写真实值）
+# 6. 部署：railway up
+#
+# Railway 免费额度：$5/月（500小时，足够个人/小团队使用）
+# ══════════════════════════════════════════════════════════════════════════════
+
+[build]
+  builder = "DOCKERFILE"
+  dockerfilePath = "Dockerfile"
+
+[deploy]
+  # 启动命令（已在 Dockerfile CMD 中指定）
+  # 若需覆盖，可使用：
+  # command = "python api_server.py"
+  
+  # 健康检查路径
+  healthcheckPath = "/health"
+  # 健康检查超时（秒）
+  healthcheckTimeout = 30
+  # 重试次数
+  restartPolicy = "ON_FAILURE"
+  restartPolicyRetries = 3
+
+[settings]
+  # 自动生成域名
+  autodeploy = true
+  
+  # 启用临时域名（部署后自动生成 .railway.app 子域名）
+  # 可在 Railway Dashboard 中绑定自定义域名
+  
+  # 区域选择（可选，注释掉则使用默认区域）
+  # region = "us-east1"
+  # region = "eu-west1"  
+  # region = "ap-east1"  # 香港节点，国内访问较快
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 环境变量组（通过 railway variables set 注入，或在 Dashboard 中配置）
+# ══════════════════════════════════════════════════════════════════════════════
+# 
+# 必需变量：
+# AMAZON_OPS_API_KEY=your_api_key
+# AMAZON_OPS_API_SECRET=your_api_secret
+#
+# 至少配置一个 LLM Provider：
+# DEEPSEEK_API_KEY=sk-...
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-...
+#
+# Redis 配置（Railway 会自动注入 RAILWAY_REDIS_URL）：
+# REDIS_URL=${RAILWAY_REDIS_URL}
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── 附加 Nixpacks 配置（备用，如 Dockerfile 不可用时使用）────────────────────
+# [nixpacks]
+#   # Python 3.11 + pip
+#   setup = ""
+#   plan = """
+#     { }
+#   """

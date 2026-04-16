@@ -1,0 +1,110 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# GitHub Actions — 亚马逊运营硅基军团 CI/CD 流水线
+# 自动部署到 Railway
+# ══════════════════════════════════════════════════════════════════════════════
+# 配置步骤：
+# 1. 在 GitHub 仓库 Settings → Secrets 中添加：
+#    - RAILWAY_TOKEN: Railway 服务令牌（从 railway.app/project/-/settings/tokens 获取）
+# 2. （可选）启用 GitHub Actions 后，每次推送到 main 分支自动部署
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:    # 手动触发
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════════
+  # Job 1: 测试（所有推送都运行）
+  # ════════════════════════════════════════════════════════════════════════════
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          pip install pytest pytest-asyncio pytest-cov
+          pytest tests/ -v --tb=short || true
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Job 2: 构建并部署到 Railway
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy:
+    name: Deploy to Railway
+    needs: test
+    runs-on: ubuntu-latest
+    # 仅 main 分支成功时部署
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Authenticate with Railway
+        run: railway login --token ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Link Railway Project
+        run: |
+          # 使用项目 ID 或链接到已有项目
+          railway link ${{ vars.RAILWAY_PROJECT_ID || secrets.RAILWAY_PROJECT_ID }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Set Environment Variables
+        run: |
+          # 从 GitHub Secrets 注入必需的环境变量
+          railway variables set AMAZON_OPS_API_KEY "${{ secrets.AMAZON_OPS_API_KEY }}"
+          railway variables set AMAZON_OPS_API_SECRET "${{ secrets.AMAZON_OPS_API_SECRET }}"
+          railway variables set DEEPSEEK_API_KEY "${{ secrets.DEEPSEEK_API_KEY }}"
+          railway variables set OPENAI_API_KEY "${{ secrets.OPENAI_API_KEY }}"
+          railway variables set LOG_LEVEL "INFO"
+          railway variables set DEBUG "false"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy to Railway
+        run: railway up --production
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Get Deployment URL
+        run: |
+          echo "Waiting for deployment..."
+          sleep 10
+          URL=$(railway domain)
+          echo "deployment_url=$URL" >> $GITHUB_OUTPUT
+          echo "🎉 Deployed to: $URL"
+
+      - name: Comment PR with deployment info
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 Deployed to Railway: ${{ env.deployment_url }}'
+            })

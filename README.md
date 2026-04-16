@@ -24,9 +24,10 @@
 
 ## ⚡ 快速启动
 
+### 本地开发
 ```bash
 # 克隆项目
-git clone https://github.com/yunlü-agent/amazon-ops-agents.git
+git clone https://github.com/WangM-A3/amazon-ops-agents.git
 cd amazon-ops-agents
 
 # 安装依赖
@@ -37,7 +38,27 @@ python api_server.py
 # → 服务地址：http://localhost:8080
 ```
 
-**API文档**（Swagger UI）：http://localhost:8080/docs
+### ☁️ 云端部署（公网访问，5分钟）
+
+推荐使用 **Railway**（$5/月免费额度，无需信用卡）：
+
+```bash
+# 1. 安装 Railway CLI
+npm install -g @railway/cli
+
+# 2. 登录并部署
+railway login
+cd amazon-ops-agents
+railway up
+
+# 3. 获取公网地址
+railway domain
+# → https://xxx.railway.app
+```
+
+详细指南：[deployment/RAILWAY_DEPLOY.md](./deployment/RAILWAY_DEPLOY.md)
+
+**API文档**（Swagger UI）：http://localhost:8080/docs 或 https://your-domain.railway.app/docs
 
 ---
 

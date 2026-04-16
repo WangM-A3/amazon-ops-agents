@@ -1,0 +1,63 @@
+# ── Docker 忽略文件 ────────────────────────────────────────────────────────────
+# 优化 Docker 构建，减少镜像大小，加快 Railway 构建速度
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# 测试
+tests/
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# 文档
+*.md
+!README.md
+docs/
+CHANGELOG.md
+IMPROVEMENT_REPORT.md
+*.txt.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# 敏感文件
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.bak
+*.bak2
+
+# Node（如果有用到）
+node_modules/
+
+# 其他
+*.zip
+*.tar.gz
+!.github/
