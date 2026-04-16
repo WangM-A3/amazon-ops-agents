@@ -1,0 +1,88 @@
+# ── 亚马逊运营硅基军团 — Render 部署配置 ────────────────────────────────────
+# Render 平台：免费 Web Service + 自动 HTTPS
+# 部署方式：GitHub 集成（无需 CLI）
+#
+# 部署步骤：
+# 1. 注册 Render 账号：https://render.com（推荐用 GitHub OAuth 注册）
+# 2. Fork 此仓库到你的 GitHub 账号
+# 3. 登录 Render → Dashboard → "New +" → "Blueprint"
+# 4. 连接到 GitHub，选择 amazon-ops-agents 仓库
+# 5. Render 自动读取 render.yaml 并部署
+#
+# Render 免费额度：
+#   - Free Web Service: 750小时/月（每月需休眠15天）
+#   - 自动 HTTPS，无需额外配置
+#   - 自定义域名：支持
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+  # ════════════════════════════════════════════════════════════════════════════
+  # API Server 服务
+  # ════════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: amazon-ops-api
+    runtime: docker
+    # Docker 镜像（从 Dockerfile 构建）
+    dockerfilePath: ./Dockerfile
+    # 健康检查
+    healthCheckPath: /health
+    # 端口
+    port: 8080
+    # 启动命令（已在 Dockerfile CMD 中指定）
+    # plan: free  # 取消注释以使用免费计划
+    envVars:
+      # ── API Server ────────────────────────────────────────────────────────
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "8080"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DEBUG
+        value: "false"
+
+      # ── 认证凭证（请在 Render Dashboard 中设置为 Secret）────────────────
+      - key: AMAZON_OPS_API_KEY
+        sync: false   # 设为 secret
+      - key: AMAZON_OPS_API_SECRET
+        sync: false   # 设为 secret
+      - key: AMAZON_OPS_TIER
+        value: professional
+
+      # ── LLM Provider（至少配置一个，设为 Secret）─────────────────────────
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # ── Redis（使用 Render 托管 Redis）───────────────────────────────────
+      - key: REDIS_HOST
+        fromDatabase:
+          name: amazon-ops-redis
+          property: host
+      - key: REDIS_PORT
+        fromDatabase:
+          name: amazon-ops-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromDatabase:
+          name: amazon-ops-redis
+          property: password
+      - key: REDIS_PASSWORD
+        sync: false
+
+      # ── CORS ─────────────────────────────────────────────────────────────
+      - key: CORS_ORIGINS
+        value: "*"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Redis 数据库（会话缓存）
+  # ════════════════════════════════════════════════════════════════════════════
+  - type: redis
+    name: amazon-ops-redis
+    ipAllowList: []   # 允许所有 IP 访问（API 服务在同一网络）
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    redisVersion: "7"
