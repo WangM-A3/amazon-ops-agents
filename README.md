@@ -280,3 +280,7 @@ pytest tests/ --cov=agents --cov=routing --cov=workflows
 ## 📄 License
 
 MIT License - 详见 [LICENSE](./LICENSE)
+
+## Download History
+
+[![Download History](https://skill-history.com/chart/wangm-a3/amazon-ops-agents.svg)](https://skill-history.com/wangm-a3/amazon-ops-agents)
