@@ -1,282 +1,125 @@
-# 亚马逊运营硅基军团
+# 亚马逊运营硅基军团 (Amazon Operations Silicon Army)
 
-> **Amazon Operations Silicon Army** — 面向亚马逊跨境电商卖家的AI运营平台
->
-> **1个幕僚长 + 20个专业Agent**，覆盖选品 / Listing优化 / 广告投放 / 库存管理 / 定价策略 / 评论管理 / 品牌保护 / 数据分析 / 客户服务 / 合规风控全链路。
+> **Amazon Operations Silicon Army v2.2** — 面向跨境电商卖家的 Multi-Agent 运营系统。
+> **1 个幕僚长 (ChiefOfStaff) + 24 个专业 Agent**，覆盖选品 / Listing / 广告 / 库存 / 定价 / 评论 / 品牌 / 数据 / 客服 / 合规 / 竞品情报 / 供应链 / 知识库全链路。
 
-[![GitHub stars](https://img.shields.io/github/stars/yunlü-agent/amazon-ops-agents)](https://github.com/yunlü-agent/amazon-ops-agents)
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-92%2F92-green.svg)](./tests)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
 ---
 
-## 🎯 定价方案
+## ✨ 核心特性（v2.2）
 
-| 版本 | 价格 | 周期 | 推荐场景 |
-|------|------|------|----------|
-| **基础版** | ¥599 | 月 | 新手卖家，选品/Listing/广告/库存/定价（5个核心Agent） |
-| **专业版** ⭐ | ¥2,999 | 月 | 成长期卖家，+评论/品牌/数据/客服/合规（15个Agent） |
-| **企业版** | ¥29,999 | 月 | 大卖家/品牌方，全部20个Agent + 定制开发 + 私有部署 |
+| 能力 | 说明 |
+|---|---|
+| 🧠 **经验记忆闭环**（v2.2 新增） | Agent 本地经验库（SQLite）：沉淀运营打法 → 同类任务自动注入 LLM prompt → 打分回写 → 低成功率经验自动停用。**越用越懂这家店** |
+| 📊 **真实数据层**（v2.0） | 三级数据源自动降级：CSV/JSON 本地导入（SQLite）→ SP-API 在线 → 模板兜底（明确标注，不伪装） |
+| 🤖 **真实 LLM 路由**（v2.0） | LOCAL（零 Token 确定性处理）/ SMALL / LARGE 端云路由；SMALL/LARGE 真实调用 OpenAI 兼容端点（默认 DeepSeek），失败自动回退模板 |
+| 🔀 **4 预置工作流** | new_product_launch / ad_optimization / inventory_alert / customer_service |
+| ⚖️ **AI 内容合规**（v2.1） | 亚马逊 AI 人物图元数据披露 + TikTok Shop AIGC 标注（双平台新规检查） |
+| 📐 **诚实基准** | ProfitOptimizer 同空间/同真值/50 市场×2 场景：拟合友好市场 vs 规则引擎 **+38~55%**（胜率 100%）；明确废弃 v1.x 矮化基准 "+19.5%" 声明 |
+| 🧪 **测试基建** | pytest **92/92 全绿** + 自测套件 + 17 项算法测试 |
 
-详见 [PRICING.md](./PRICING.md)
+## 🧑‍💼 团队架构
 
----
+```
+ChiefOfStaff（幕僚长：关键词路由 + 复杂度评分 + 端云路由 + 并行调度）
+├── 选品 2   ProductResearch / NicheFinder
+├── Listing 3 ListingOptimizer / KeywordResearch / A+Content
+├── 广告 2   PPCManager / SponsoredAds
+├── 库存 2   InventoryPlanner / FBA Manager
+├── 定价 2   PriceOptimizer / Repricing
+├── 评论 2   ReviewMonitor / VINE Program
+├── 品牌 2   BrandRegistry / HijackerDetector
+├── 数据 2   SalesAnalytics / ProfitCalculator
+├── 客服 1   CustomerService
+├── 合规 2   ComplianceChecker / AccountHealth
+├── 情报 1   CompetitorAnalysis
+├── GUI 1    GUIAgent（SIMULATE，需人工确认）
+├── 供应链 1 SupplyChain
+└── 知识库 1 QAAgent
+```
 
-## ⚡ 快速启动
+## 🚀 快速启动
 
-### 本地开发
+### 方式 1：一键包（推荐，免安装）
+Windows 解压后双击 `start.bat` → 浏览器自动打开操作台 `http://127.0.0.1:8090/docs`。
+自带便携 Python 运行时 + 示例数据（雨伞品类），无需安装任何环境。
+
+### 方式 2：源码运行
 ```bash
-# 克隆项目
-git clone https://github.com/WangM-A3/amazon-ops-agents.git
-cd amazon-ops-agents
-
-# 安装依赖
+# 需要 Python 3.12
 pip install -r requirements.txt
-
-# 启动服务
-python api_server.py
-# → 服务地址：http://localhost:8080
+python run_ops.py ingest      # 导入 data/sample 示例数据（可选）
+python run_ops.py server 8090 # 启动 API Server
+# 操作台: http://localhost:8090/docs
 ```
 
-### ☁️ 云端部署（公网访问，5分钟）
+### 配置 LLM（可选但推荐）
+复制 `.env.example` 为 `.env` 并填写：
+```ini
+DEEPSEEK_API_KEY=sk-xxx          # 或 OPENAI_API_KEY
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+```
+不配置也能用：Agent 自动降级为本地模板结果并明确标注"演示数据"。
 
-推荐使用 **Railway**（$5/月免费额度，无需信用卡）：
+## 🔌 API 概览
+
+```
+GET  /health                      健康检查
+GET  /api/v1/agents               24 个 Agent 列表
+POST /api/v1/execute              单任务（自动路由 → 并行执行 → 聚合）
+POST /api/v1/batch                批量任务
+POST /api/v1/workflow             预置工作流（4 个）
+GET  /api/v1/stats                系统统计
+POST /api/v1/memory/experience    沉淀经验（v2.2）
+GET  /api/v1/memory/experience    列出经验（v2.2）
+POST /api/v1/memory/rating        打分回写 → 自动淘汰烂经验（v2.2）
+GET  /api/v1/audit                审计查询
+```
+鉴权：`X-API-Key` header（HMAC 签名可选）；限流 100/min/Key。
+
+## 📁 目录结构
+
+```
+amazon-ops/
+├── agents/           # 24 个 Agent（base/chief/real_data/support）
+├── routing/          # 端云路由（task_router / llm_executor / local_executor）
+├── llm/              # OpenAI 兼容 LLM 客户端（真实调用）
+├── memory/           # 经验记忆闭环（v2.2）
+├── execution/        # 算法内核（ProfitOptimizer / IntradayBidder / ConversionPredictor）
+├── compliance/       # AI 内容合规规则（v2.1）
+├── workflows/        # 4 预置工作流
+├── data/             # SQLite 真实数据层（sample 示例数据 / ingest / provider）
+├── benchmarks/       # 诚实基准
+├── tests/            # 92 项测试
+├── api_server.py     # FastAPI 入口
+└── run_ops.py        # 统一 CLI（test/selftest/bench/ingest/workflow/server）
+```
+
+## 🧪 测试与验证
 
 ```bash
-# 1. 安装 Railway CLI
-npm install -g @railway/cli
-
-# 2. 登录并部署
-railway login
-cd amazon-ops-agents
-railway up
-
-# 3. 获取公网地址
-railway domain
-# → https://xxx.railway.app
+python run_ops.py test        # 全量 92 项
+python run_ops.py selftest    # 自测 9 项
+python run_ops.py bench       # ProfitOptimizer 诚实基准
+python run_ops.py po-test     # 算法 17 项
 ```
 
-详细指南：[deployment/RAILWAY_DEPLOY.md](./deployment/RAILWAY_DEPLOY.md)
+## 📋 版本历史
 
-**API文档**（Swagger UI）：http://localhost:8080/docs 或 https://your-domain.railway.app/docs
+- **v2.2.0 (2026-09)**：经验记忆闭环（memory/ + /api/v1/memory/*）
+- v2.1.0：AI 内容合规层（亚马逊/TikTok Shop 双平台 AIGC 标注新规）
+- v2.0.0：真实数据层 + 真实 LLM 路由 + 4 工作流修复 + 测试基建 + 诚实基准
+- v1.x：框架真实、业务层 Mock 演示壳（已废弃矮化基准声明）
 
----
+## ⚠️ 诚实声明
 
-## 🏗️ 团队架构
+- 经验记忆为**半自动闭环**：经验由卖家沉淀、打分淘汰；**自动「报错→学习」进化为零实现**
+- IM 远程调度（飞书/微信/WhatsApp）、跨渠道归因引擎、公开爬取竞品情报：**规划中，零实现**
+- 所有 Agent 输出携带数据来源标记（真实数据 / 演示数据），不伪装
 
-### 幕僚长（ChiefOfStaff）
+## 📄 许可
 
-智能任务调度中心，理解用户意图并分发到专业Agent，支持：
-- 自然语言查询全链路数据
-- 并行执行 + 结果聚合
-- 主动预警异常（库存/差评/跟卖/ACOS/ODR）
-- 端云智能路由（零Token消耗优化）
-
-### 20个专业Agent
-
-| 类别 | Agent | 核心能力 |
-|------|-------|---------|
-| **选品分析** | ProductResearchAgent | 市场趋势、竞品分析 |
-| | NicheFinderAgent | 细分市场、机会识别 |
-| **Listing优化** | ListingOptimizerAgent | 标题/五点/描述优化 |
-| | KeywordResearchAgent | 关键词挖掘、排名追踪 |
-| | AContentGeneratorAgent | A+页面内容生成 |
-| **广告投放** | PPCManagerAgent | Campaign管理、ACOS优化 |
-| | SponsoredAdsAgent | SP/SB/SD广告策略 |
-| **库存管理** | InventoryPlannerAgent | 库存预测、安全库存 |
-| | FbaManagerAgent | FBA费用优化、货件管理 |
-| **定价策略** | PriceOptimizerAgent | 竞品比价、动态定价 |
-| | RepricingAgent | BuyBox守价、自动调价 |
-| **评论管理** | ReviewMonitorAgent | 评论监控、差评预警 |
-| | VINEProgramAgent | Vine计划、催评策略 |
-| **品牌保护** | BrandRegistryAgent | 品牌注册、侵权投诉 |
-| | HijackerDetectorAgent | 跟卖检测与处理 |
-| **数据分析** | SalesAnalyticsAgent | 销售报表、趋势分析 |
-| | ProfitCalculatorAgent | 利润计算、ROI分析 |
-| **客户服务** | CustomerServiceAgent | 买家消息、退货处理 |
-| **合规风控** | ComplianceCheckerAgent | 合规检查、政策预警 |
-| | AccountHealthAgent | 账号健康、ODR监控 |
-
----
-
-## 📌 快速使用示例
-
-### 快速查询（自然语言）
-
-```bash
-curl -X POST http://localhost:8080/api/v1/execute \
-  -H "Content-Type: application/json" \
-  -d '{"task": "帮我查一下今天美国站的销量", "marketplace": "US"}'
-```
-
-### 单Agent调用
-
-```bash
-# Listing优化
-curl -X POST http://localhost:8080/api/v1/execute \
-  -H "Content-Type: application/json" \
-  -d '{"task": "优化蓝牙耳机标题", "sku": "ABC123"}'
-
-# 广告优化
-curl -X POST http://localhost:8080/api/v1/execute \
-  -H "Content-Type: application/json" \
-  -d '{"task": "我的广告ACOS太高了，怎么优化", "sku": "ABC123"}'
-
-# 差评回复
-curl -X POST http://localhost:8080/api/v1/execute \
-  -H "Content-Type: application/json" \
-  -d '{"task": "收到一个1星差评，说耳机续航不行，怎么回复", "asin": "B0XXXXXX"}'
-```
-
-### 工作流（一键端到端）
-
-```bash
-# 新品上架工作流
-curl -X POST http://localhost:8080/api/v1/workflow \
-  -H "Content-Type: application/json" \
-  -d '{"workflow_id": "new_product_launch", "input": {"product_name": "3D打印灯", "marketplace": "US"}}'
-
-# 广告优化工作流
-curl -X POST http://localhost:8080/api/v1/workflow \
-  -H "Content-Type: application/json" \
-  -d '{"workflow_id": "ad_optimization", "input": {"sku": "ABC123", "current_acos": 0.42}}'
-```
-
-更多示例见 [examples/](./examples/) 目录。
-
----
-
-## ✨ 核心功能特性
-
-### 🧠 端云智能路由（v1.1+）
-- **LOCAL引擎**：数据提取/格式转换/统计计算，零Token消耗
-- **SMALL引擎**：轻量级推理，Qwen-7B级别
-- **LARGE引擎**：复杂分析，GPT-4级别
-- 自动降级保障，可用性>99%
-
-### 🛡️ 三层安全防护（v1.1+）
-- **应用层**：10类危险操作直接拦截（BLOCK）
-- **系统层**：5类敏感操作二次确认（CONFIRM）
-- **驱动层**：全量操作审计日志
-
-### ⚡ 预置工作流（v1.1+）
-| 工作流 | 步骤 | 用途 |
-|--------|------|------|
-| 🆕 新品上架 | 4步/60s | 选品→关键词→Listing→A+ |
-| 📈 广告优化 | 4步/45s | 数据→竞品→策略→ROI |
-| 📦 库存预警 | 5步/43s | FBA→预测→补货→供应→报告 |
-| 💬 客户服务 | 4步/21s | 分类→检索→回复→审核 |
-
-### 🔗 外部集成
-- **Amazon SP-API**（官方API）
-- **Helium 10 / Jungle Scout / Keepa**（选品分析）
-- **船长ERP / 数字酋长**（数据同步）
-- **Google Sheets**（数据导出）
-- **钉钉 / 企业微信 / 邮件**（告警通知）
-
----
-
-## 📁 项目结构
-
-```
-amazon-ops-agents/
-├── SKILL.md                    # 技能定义（ClawHub发布用）
-├── README.md                   # 项目说明
-├── CHANGELOG.md                # 版本记录
-├── PRICING.md                  # 定价方案
-├── LICENSE                     # MIT协议
-├── requirements.txt            # Python依赖
-├── Dockerfile                  # 生产部署
-├── api_server.py              # FastAPI服务（端口8080）
-│
-├── agents/                     # Agent实现
-│   ├── base.py                # Agent基类
-│   ├── chief.py               # 幕僚长（任务调度）
-│   ├── gui_agent.py           # GUI操作代理（Guardian安全）
-│   └── ...
-│
-├── routing/                   # 路由引擎
-│   ├── task_router.py         # 复杂度评分+引擎选择
-│   └── local_executor.py      # 本地执行器（零Token）
-│
-├── security/                  # 安全模块
-│   ├── gui_guardian.py        # 三层安全防护
-│   └── credential_vault.py    # 凭证加密存储
-│
-├── workflows/                 # 工作流引擎
-│   ├── workflow_engine.py     # 步骤执行+状态追踪
-│   └── presets.py             # 预置工作流
-│
-├── examples/                   # 使用示例
-│   ├── README.md              # 示例说明
-│   ├── basic/                 # 基础示例
-│   │   ├── 01_quick_query.py
-│   │   ├── 02_single_agent.py
-│   │   └── 03_batch_tasks.py
-│   ├── advanced/             # 高级示例
-│   │   ├── 01_workflow_launch.py
-│   │   ├── 02_multi_agent_chain.py
-│   │   └── 03_api_integration.py
-│   └── scripts/               # 运维脚本
-│       ├── demo_local.sh
-│       └── health_check.sh
-│
-├── tests/                     # 单元测试
-│   ├── test_demo.py           # 基础测试
-│   ├── test_agents.py         # Agent测试
-│   ├── test_router.py         # 路由测试
-│   └── test_workflow.py       # 工作流测试
-│
-└── data/                      # 本地数据存储
-```
-
----
-
-## 🔧 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| **语言** | Python 3.10+ |
-| **框架** | FastAPI + Uvicorn |
-| **协议** | Amazon SP-API（官方） |
-| **路由** | 关键词匹配 + 复杂度评分 |
-| **执行** | async 并发（asyncio） |
-| **安全** | HMAC-SHA256 凭证加密 |
-| **部署** | Docker + Docker Compose |
-
----
-
-## 📖 文档
-
-| 文档 | 说明 |
-|------|------|
-| [examples/README.md](./examples/) | 完整使用示例 |
-| [CHANGELOG.md](./CHANGELOG.md) | 版本更新记录 |
-| [PRICING.md](./PRICING.md) | 详细定价方案 |
-| [IMPROVEMENT_REPORT.md](./IMPROVEMENT_REPORT.md) | v1.1技术改进报告 |
-
----
-
-## 🐛 测试
-
-```bash
-# 运行所有测试
-pytest tests/ -v
-
-# 查看测试覆盖率
-pytest tests/ --cov=agents --cov=routing --cov=workflows
-```
-
----
-
-## 🌐 ClawHub
-
-本技能包发布于 [ClawHub](https://clawhub.com)，支持扣子平台一键安装。
-
-> 扣子用户可直接在技能商店搜索「亚马逊运营硅基军团」安装使用。
-
----
-
-## 📄 License
-
-MIT License - 详见 [LICENSE](./LICENSE)
+[MIT License](./LICENSE) · 定价方案见 [PRICING.md](./PRICING.md)
