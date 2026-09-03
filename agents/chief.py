@@ -186,7 +186,14 @@ class ChiefOfStaff:
                     agent_span = agent_scope._span
 
                 try:
-                    result = await AGENTS[aid].execute(task, context)
+                    # 端云路由落地：SMALL/LARGE 引擎在 LLM 可用时真实调用大模型
+                    from routing.llm_executor import LLMExecutor, llm_enabled
+                    if llm_enabled() and engine.value in ("small_model", "large_model"):
+                        result = await LLMExecutor(client=None).execute(aid, task, context)
+                    else:
+                        result = await AGENTS[aid].execute(task, context)
+                        if isinstance(result, dict):
+                            result.setdefault("llm_mode", "template")
                     tokens = result.get("tokens", 0) if isinstance(result, dict) else 0
 
                     if agent_span is not None:

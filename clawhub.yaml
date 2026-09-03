@@ -2,9 +2,9 @@
 # 亚马逊运营硅基军团
 
 name: amazon-ops-silicon-army
-version: 1.1.0
+version: 1.2.0
 type: skill
-description: 亚马逊运营硅基军团 - 面向跨境电商卖家的Multi-Agent运营系统，20个专业Agent覆盖选品→Listing→广告→库存→定价全链路
+description: 亚马逊运营硅基军团 - 面向跨境电商卖家的Multi-Agent运营系统，20+专业Agent覆盖选品→Listing→广告→库存→定价全链路，内置AI内容合规检查（亚马逊/TikTok Shop AI生成内容标注新规）
 
 author:
   name: WangM-A3
@@ -26,6 +26,10 @@ keywords:
   - multi-agent
   - 跨境电商
   - 亚马逊运营
+  - ai-compliance
+  - aigc
+  - 内容合规
+  - tiktok-shop
 
 categories:
   - ecommerce-ai
@@ -48,8 +52,13 @@ triggers:
   - 库存
   - 定价
   - 合规
+  - AI合规
+  - AI内容
+  - AI生成
+  - AIGC
   - 亚马逊运营
   - Amazon Seller
+  - TikTok Shop
 
 compatibility:
   platforms:
@@ -76,6 +85,7 @@ features:
   - IM远程调度（飞书/微信/WhatsApp）
   - 三层数据架构（公开爬取+用户上传+SP-API可选授权）
   - 错误记忆自进化机制
+  - AI内容合规检查（亚马逊AI人物图元数据披露 + TikTok Shop AIGC标注与禁用AI篡改外观）
 
 pricing:
   basic:

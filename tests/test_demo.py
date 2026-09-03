@@ -8,6 +8,12 @@ import json
 import sys
 from datetime import datetime
 
+# 修复中文 Windows(GBK 控制台) 下 print(emoji) 崩溃
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # 确保可以导入
 sys.path.insert(0, ".")
 

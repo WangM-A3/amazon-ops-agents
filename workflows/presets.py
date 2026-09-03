@@ -367,19 +367,28 @@ class WorkflowEngine:
         context: dict[str, Any],
         results: dict[str, Any],
     ) -> dict[str, Any]:
-        """解析步骤输入参数"""
+        """解析步骤输入参数（修复：非 dict 值包装 + Agent 信封解包）"""
         if step.input_key.startswith("all_previous_results"):
             return results
         if step.input_key in context:
             return context[step.input_key]
         if "+" in step.input_key:
             parts = [p.strip() for p in step.input_key.split("+")]
-            merged = {}
+            merged: dict[str, Any] = {}
             for part in parts:
+                val: Any = None
                 if part in context:
-                    merged.update(context[part])
-                if part in results:
-                    merged.update(results[part])
+                    val = context[part]
+                elif part in results:
+                    val = results[part]
+                    # 解包 Agent 信封：只取业务 result，忽略 agent/tokens/kpis 元数据
+                    if isinstance(val, dict) and isinstance(val.get("result"), dict):
+                        val = val["result"]
+                if isinstance(val, dict):
+                    merged.update(val)
+                elif val is not None:
+                    # 非 dict（list/str/数值）按键名包装，避免 update() 崩溃
+                    merged[part] = val
             return merged
         return context.get(step.input_key, {})
 

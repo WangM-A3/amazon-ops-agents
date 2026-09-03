@@ -69,6 +69,20 @@ class BatchResponse(BaseModel):
     task_id: str = Field(default_factory=lambda: secrets.token_hex(8))
     results: list[dict[str, Any]]
 
+class WorkflowRequest(BaseModel):
+    """工作流请求"""
+    workflow_id: str = Field(..., min_length=1, description="预置工作流ID")
+    input: dict[str, Any] = Field(default_factory=dict, description="工作流输入参数")
+
+class WorkflowResponse(BaseModel):
+    """工作流响应"""
+    workflow_id: str
+    status: str
+    error: str | None = None
+    step_results: dict[str, Any]
+    total_seconds: float
+    estimated_vs_actual: dict[str, int] = Field(default_factory=dict)
+
 class HealthResponse(BaseModel):
     """健康检查响应"""
     status: str
@@ -420,6 +434,9 @@ async def execute_task(
     # 并行执行
     result = await CHIEF.execute(req.task, req.context)
 
+    # v2.1 经验记忆闭环：记录本次命中的经验 id，供 /memory/rating 评分回写
+    _record_experience_hits(req.task_id, result)
+
     # 异步Webhook回调
     if req.callback_url:
         asyncio.create_task(notify_callback(req.callback_url, req.task_id, result))
@@ -473,6 +490,34 @@ async def batch_execute(
             })
 
     return BatchResponse(total=len(req.tasks), task_id=task_id, results=cleaned)
+
+
+@app.get("/api/v1/workflows", tags=["工作流"])
+async def list_workflows(auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """列出全部预置工作流"""
+    from workflows.presets import WORKFLOW_ENGINE
+    return {"total": len(WORKFLOW_ENGINE.list_workflows()), "workflows": WORKFLOW_ENGINE.list_workflows()}
+
+
+@app.post("/api/v1/workflow", response_model=WorkflowResponse, tags=["工作流"])
+async def run_workflow(
+    req: WorkflowRequest,
+    request: Request,
+    auth: dict = Depends(require_auth),
+) -> WorkflowResponse:
+    """一键启动预置工作流（README 对齐：new_product_launch / ad_optimization / inventory_alert / customer_service）"""
+    logger.info(f"[Workflow] {req.workflow_id} | input={str(req.input)[:80]}")
+    audit("workflow_run", request.headers.get("X-API-Key", ""), {"workflow_id": req.workflow_id})
+    from workflows.presets import WORKFLOW_ENGINE
+    result = await WORKFLOW_ENGINE.launch(req.workflow_id, req.input)
+    return WorkflowResponse(
+        workflow_id=result.workflow_id,
+        status=result.status.value,
+        error=result.error,
+        step_results=result.step_results,
+        total_seconds=result.total_seconds,
+        estimated_vs_actual=result.estimated_vs_actual,
+    )
 
 
 @app.get("/api/v1/stats", tags=["系统"])
@@ -554,6 +599,110 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         content["detail"] = str(exc)
 
     return JSONResponse(status_code=500, content=content)
+
+
+# ─── 经验记忆闭环 API（v2.1）────────────────────────────────────────────────
+# 最近的执行结果 → 命中经验映射（task_id -> exp ids），供评分回写；环形上限 500
+_RECENT_HITS: dict[str, list[int]] = {}
+_RECENT_HITS_MAX = 500
+
+
+def _record_experience_hits(task_id: str, chief_result: dict[str, Any]) -> None:
+    """从 ChiefOfStaff 结果中收集各 Agent 命中的经验 id"""
+    hits: list[int] = []
+    for r in chief_result.get("results", {}).values():
+        if not isinstance(r, dict):
+            continue
+        for e in r.get("experience_used") or []:
+            if isinstance(e, dict) and e.get("id"):
+                hits.append(int(e["id"]))
+    if not hits:
+        return
+    _RECENT_HITS[task_id] = sorted(set(hits))
+    if len(_RECENT_HITS) > _RECENT_HITS_MAX:
+        for stale in list(_RECENT_HITS)[:_RECENT_HITS_MAX // 5]:
+            _RECENT_HITS.pop(stale, None)
+
+
+class ExperienceCreate(BaseModel):
+    """新增一条运营经验"""
+    agent_id: str = Field(..., min_length=1, description="目标 Agent id，如 ppc_manager")
+    title: str = Field(..., min_length=1, max_length=200, description="经验标题")
+    content: str = Field(..., min_length=1, max_length=4000, description="经验/修正策略正文")
+    keywords: list[str] = Field(default_factory=list, max_length=50, description="触发关键词（命中任务文本才注入）")
+
+
+class RatingRequest(BaseModel):
+    """给命中经验打分（1-5）"""
+    task_id: str | None = Field(None, description="执行响应的 task_id（自动定位该任务命中的经验）")
+    experience_ids: list[int] | None = Field(None, description="或直接指定经验 id 列表")
+    rating: int = Field(..., ge=1, le=5, description="1=没用 2=较差 3=一般 4=有用 5=非常好")
+
+
+@app.post("/api/v1/memory/experience", tags=["经验记忆"])
+async def create_experience_api(
+    req: ExperienceCreate,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """沉淀一条经验：告诉系统「以后这类任务要这样做」"""
+    from memory.experience_store import create_experience
+    exp = create_experience(req.agent_id, req.title, req.content, req.keywords)
+    audit("memory_create", auth.get("name", "unknown"),
+          {"agent_id": req.agent_id, "exp_id": exp["id"], "title": req.title})
+    return {"status": "created", "experience": exp}
+
+
+@app.get("/api/v1/memory/experience", tags=["经验记忆"])
+async def list_experience_api(
+    agent_id: str | None = None,
+    include_inactive: bool = False,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """列出经验库（可按 Agent 过滤）"""
+    from memory.experience_store import list_experiences
+    items = list_experiences(agent_id=agent_id, include_inactive=include_inactive)
+    return {"total": len(items), "experiences": items}
+
+
+@app.post("/api/v1/memory/experience/{exp_id}/deactivate", tags=["经验记忆"])
+async def deactivate_experience_api(
+    exp_id: int,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """手动停用一条经验（不再注入）"""
+    from memory.experience_store import deactivate_experience
+    ok = deactivate_experience(exp_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"经验 #{exp_id} 不存在"})
+    return {"status": "deactivated", "exp_id": exp_id}
+
+
+@app.post("/api/v1/memory/rating", tags=["经验记忆"])
+async def rate_experience_api(
+    req: RatingRequest,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """给命中经验打分 → 正/负反馈统计 → 低成功率经验自动停用（闭环收口）"""
+    from memory.experience_store import apply_rating
+    exp_ids: list[int] = []
+    if req.task_id and req.task_id in _RECENT_HITS:
+        exp_ids = _RECENT_HITS[req.task_id]
+    if req.experience_ids:
+        exp_ids = [int(i) for i in req.experience_ids]
+    if not exp_ids:
+        raise HTTPException(status_code=404, detail={
+            "code": "NO_EXPERIENCE",
+            "message": "该任务未命中任何经验，或 task_id 已过期；请用 experience_ids 指定",
+        })
+    updated = []
+    for eid in exp_ids:
+        try:
+            updated.append(apply_rating(eid, req.rating))
+        except KeyError:
+            continue
+    if not updated:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "经验不存在"})
+    return {"status": "rated", "rating": req.rating, "updated": updated}
 
 
 # ─── 用户反馈接口 ────────────────────────────────────────────────────────────

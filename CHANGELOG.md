@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-03
+
+### Added
+
+- **AI 内容合规层**（应对亚马逊 + TikTok Shop 双平台 AI 内容标注新规）
+  - `compliance/ai_content_rules.py`：双平台规则库 + 检查函数
+    - 亚马逊：AI 生成逼真人物图元数据披露（contains-synthetic-performer / synthetic-media）
+    - TikTok Shop：AI 内容显著标注 + 禁用 AI 篡改商品外观/捏造不实效果
+  - `ComplianceCheckerAgent`：AI 内容合规检查（素材属性从 context/任务文本自动推断）
+  - `ListingOptimizerAgent` / `AContentGeneratorAgent`：AI 合规 checklist 输出
+  - LLM 模式 prompt 注入合规规则（compliance_checker / listing_optimizer / acontent）
+  - 新增 16 项 AI 内容合规单元测试
+
 ## [1.1.0] - 2026-04-13
 
 ### Added

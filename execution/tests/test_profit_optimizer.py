@@ -282,73 +282,51 @@ def test_quick_optimize():
 
 def test_performance_vs_rule_engine():
     """
-    模拟对比：ProfitOptimizer vs 传统规则引擎
+    诚实的性能基准（替代原"全空间搜索 vs 单步空转规则"的矮化对比）：
 
-    传统规则引擎逻辑：
-        if acos > 0.35: bid *= 0.90
-        elif acos < 0.15: bid *= 1.10
-        else: bid *= 1.0
+    方法论（与 benchmarks/bench_profit_optimizer.py 一致）：
+    - 同搜索空间：optimizer 的 bid_range 限制在观测数据范围内
+    - 同真值评估：三个策略都用 benchmark 私有真值利润函数评估（非模型拟合值）
+    - 规则引擎可迭代 20 步，且用与毛利结构匹配的自适应阈值（0.25/0.10）
+    - 多市场多种子，报告 R² / 累计利润 / 胜率
 
-    评估指标：
-        - 平均绝对误差（MAE）：预测利润 vs 真实利润
-        - ACOS偏差
-        - 计算延迟
+    断言（宽松且诚实）：
+    1. optimizer 累计利润 > 维持现状（"什么都不做"）
+    2. optimizer 对自适应规则的胜率 > 60%（失配市场下不要求全胜）
     """
-    # 模拟数据集（模拟真实竞价场景）
-    np: "type"  # placeholder
     import numpy as np
+    from benchmarks.bench_profit_optimizer import (
+        N_SEEDS, _gen_market, _true_profit_at, _rule_strategy, _optimizer_strategy,
+    )
 
-    np.random.seed(42)
-    bids   = np.linspace(0.2, 4.0, 20)
-    profits = (5.0 * (1 - np.exp(-0.8 * bids)) * np.exp(-0.3 * bids) + np.random.normal(0, 0.3, 20))
-    profits = np.clip(profits, 0.1, None)
+    agg_opt = agg_cur = agg_ada = 0.0
+    win_ada = 0
+    r2s = []
+    for seed in range(N_SEEDS):
+        records, truth = _gen_market(seed, family=False)  # 用失配市场（更严格）
+        cur_bid = records[-1].bid
+        rule_ada_bid = _rule_strategy(records, 20, truth, adaptive=True)
+        opt_bid, r2, _model = _optimizer_strategy(records)
+        p_opt = _true_profit_at(opt_bid, truth)
+        p_cur = _true_profit_at(cur_bid, truth)
+        p_ada = _true_profit_at(rule_ada_bid, truth)
+        agg_opt += p_opt
+        agg_cur += p_cur
+        agg_ada += p_ada
+        win_ada += 1 if p_opt > p_ada + 1e-9 else 0
+        r2s.append(r2)
 
-    records = [
-        BidRecord(bid=float(b), impressions=1000, clicks=int(b*20),
-                  spend=float(b*20), sales=float(b*100), orders=int(b*2))
-        for b, p in zip(bids, profits)
-    ]
+    med_r2 = float(np.median(r2s))
+    win_rate = win_ada / N_SEEDS
+    print(f"✅ T9: 诚实性能基准（失配市场 {N_SEEDS} 个）")
+    print(f"   ├─ 拟合R²中位数={med_r2:.3f}")
+    print(f"   ├─ 累计利润: optimizer=${agg_opt:.0f} | 规则ada=${agg_ada:.0f} | 维持=${agg_cur:.0f}")
+    print(f"   └─ vs 自适应规则: 胜率={win_rate:.0%}（原+19.5%声明为矮化结果，见benchmarks/）")
 
-    # ── ProfitOptimizer ───────────────────────────────────────────────────────
-    start_opt = time.perf_counter()
-    pmc_opt   = ProfitMarketCurve()
-    curve_opt = pmc_opt.fit_curve(records)
-    result_opt = pmc_opt.find_optimal_bid(curve_opt)
-    elapsed_opt = time.perf_counter() - start_opt
-
-    # ── 传统规则引擎（模拟）─────────────────────────────────────────────────
-    start_rule = time.perf_counter()
-    last_record = records[-1]
-    current_bid = last_record.bid
-    acos = last_record.acos
-
-    if acos > 0.35:
-        rule_bid = current_bid * 0.90
-    elif acos < 0.15:
-        rule_bid = current_bid * 1.10
-    else:
-        rule_bid = current_bid
-
-    elapsed_rule = time.perf_counter() - start_rule
-
-    # ── 评估 ─────────────────────────────────────────────────────────────────
-    # ProfitOptimizer 找到的利润点
-    opt_profit = pmc_opt._profit_model(result_opt.optimal_bid,
-                                        curve_opt.alpha, curve_opt.beta,
-                                        curve_opt.gamma, curve_opt.delta)
-
-    # 规则引擎的"盲猜"利润
-    rule_profit = pmc_opt._profit_model(rule_bid,
-                                         curve_opt.alpha, curve_opt.beta,
-                                         curve_opt.gamma, curve_opt.delta)
-
-    improvement = (opt_profit - rule_profit) / max(rule_profit, 0.01)
-
-    print(f"✅ T9: 性能基准")
-    print(f"   ├─ ProfitOptimizer: ${result_opt.optimal_bid:.2f} | 预期利润={opt_profit:.3f} | 耗时={elapsed_opt*1000:.2f}ms")
-    print(f"   ├─ 规则引擎:       ${rule_bid:.2f} | 预期利润={rule_profit:.3f} | 耗时={elapsed_rule*1000:.4f}ms")
-    print(f"   └─ 利润提升:       {improvement:+.1%}")
-    print(f"   NOTE: ProfitOptimizer 找到全局最优，规则引擎仅基于最后一条数据做局部调整")
+    assert agg_opt > agg_cur, f"optimizer 累计利润应高于维持现状: {agg_opt:.2f} vs {agg_cur:.2f}"
+    assert agg_opt > agg_ada, f"optimizer 累计利润应高于自适应规则: {agg_opt:.2f} vs {agg_ada:.2f}"
+    assert win_rate > 0.60, f"optimizer 对自适应规则胜率应>60%: {win_rate:.0%}"
+    return True
 
 
 # ══════════════════════════════════════════════════════════════════════════════

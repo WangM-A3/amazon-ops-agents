@@ -140,6 +140,15 @@ class ListingOptimizerAgent(AmazonAgent):
                     "Search Terms不要用连词符，用逗号分隔",
                     "避免关键词堆砌，保持可读性",
                 ],
+                "ai_content_compliance": {
+                    "tip": "若 Listing 配图使用 AI 生成的逼真人物图，必须在图片元数据中添加 AI 披露标签（如 contains-synthetic-performer），否则面临审核不通过/下架风险（亚马逊新规）。",
+                    "checklist": [
+                        "确认主图/辅图是否含 AI 生成或深度合成的人物形象",
+                        "若含 AI 人物 → 在元数据添加 synthetic media 披露标签",
+                        "纯产品图（无人物）不受人物披露要求约束，但需与实物一致",
+                        "A+ 内容与品牌旗舰店图片同样适用本要求",
+                    ],
+                },
             },
             "kpis": {"listing_score_before": 61, "listing_score_after": 88, "lift": "+27%"},
         }
@@ -215,6 +224,18 @@ class AContentGeneratorAgent(AmazonAgent):
                     {"type": "信息图/对比图", "spec": "2000×1500px，高清文字可读"},
                 ],
                 "compliance_check": "✅ 通过Amazon A+内容政策审核",
+                "ai_content_compliance": {
+                    "warning": "⚠️ A+ 内容若使用 AI 生成的逼真人物图（模特/生活方式场景），必须按亚马逊新规添加 AI 披露元数据标签，否则图片可能被拒审。",
+                    "required_actions": [
+                        "AI 人物图 → 元数据加 contains-synthetic-performer 标签",
+                        "生活方式场景图如为 AI 生成，需在 A+ 编辑器标注 synthetic media",
+                        "避免用 AI 修图夸大产品效果（如把普通材质渲染成高级质感）",
+                    ],
+                    "safe_alternatives": [
+                        "纯产品/白底图（无人物）不受人物披露约束",
+                        "使用真人实拍素材（可完全规避 AI 披露要求）",
+                    ],
+                },
                 "estimated_impact": "转化率提升15-25%（行业均值+18%）",
             },
             "kpis": {"content_score": "95/100", "conversion_lift": "+20%", "module_count": 6},
@@ -234,6 +255,30 @@ class PPCManagerAgent(AmazonAgent):
         )
 
     async def _run(self, task: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        # 真实数据优先：有导入数据/SP-API 时基于真实投放数据给出结论
+        from data.provider import get_provider
+        from agents.real_data import build_ads_result
+        prov = get_provider()
+        metrics, src = prov.get_ads_metrics(days=30)
+        if src != "demo" and metrics.get("campaigns"):
+            base = build_ads_result(metrics, src)
+            result = base["result"]
+            total = metrics["total"]
+            # 结合 ACOS 生成优化建议
+            acos = total.get("acos") or 0
+            if acos > 0.30:
+                plan = [{"campaign": "整体", "action": "ACOS过高，优先暂停高花费低产出 campaign", "priority": "高"}]
+            elif acos > 0.22:
+                plan = [{"campaign": "整体", "action": "ACOS略高于目标，收窄低效词", "priority": "中"}]
+            else:
+                plan = [{"campaign": "整体", "action": "ACOS健康，可适当提高预算", "priority": "低"}]
+            result["acos_analysis"] = f"整体ACOS={acos:.1%}，基于 {len(metrics['campaigns'])} 个campaign真实数据"
+            result["optimization_plan"] = plan
+            return {
+                "input": task,
+                "result": result,
+                "kpis": {**base["kpis"], "target_acos": 0.22},
+            }
         return {
             "input": task,
             "result": {
@@ -315,6 +360,33 @@ class InventoryPlannerAgent(AmazonAgent):
         )
 
     async def _run(self, task: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        # 真实数据优先：基于导入/SP-API 的真实库存与销量计算补货
+        from data.provider import get_provider
+        from agents.real_data import build_inventory_result
+        prov = get_provider()
+        items, src = prov.get_inventory()
+        if src != "demo" and items:
+            base = build_inventory_result(items, src)
+            result = base["result"]
+            # 补货计划：按 days_left 排序，lead_time 假设 21 天海运 / 7 天空运
+            plan = []
+            for x in result["current_inventory"]:
+                if x["days_left"] <= 30:
+                    qty = max(int(x["daily_sales"] * 45), 100)  # 45天安全库存
+                    plan.append({
+                        "sku": x["sku"], "qty": qty,
+                        "urgency": "紧急" if x["days_left"] <= 10 else "预警",
+                        "lead_time": "7天" if x["days_left"] <= 10 else "21天",
+                        "latest_order": "今天必须下单" if x["days_left"] <= 10 else f"{x['days_left']-7}天后",
+                        "ship": "空运（优先）" if x["days_left"] <= 10 else "海运",
+                    })
+            result["restock_plan"] = plan
+            result["safety_stock_formula"] = {"method": "days_left = stock / avg_daily_sales(14d)", "note": "基于真实销量数据计算"}
+            return {
+                "input": task,
+                "result": result,
+                "kpis": base["kpis"],
+            }
         return {
             "input": task,
             "result": {
@@ -622,6 +694,19 @@ class SalesAnalyticsAgent(AmazonAgent):
         )
 
     async def _run(self, task: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        # 真实数据优先：基于导入数据的销售汇总
+        from data.provider import get_provider
+        from agents.real_data import build_sales_result
+        prov = get_provider()
+        marketplace = (ctx or {}).get("marketplace") or None
+        summary, src = prov.get_sales_summary(marketplace=marketplace, days=30)
+        if src != "demo" and summary.get("items"):
+            base = build_sales_result(summary, src)
+            return {
+                "input": task,
+                "result": base["result"],
+                "kpis": base["kpis"],
+            }
         return {
             "input": task,
             "result": {
@@ -666,6 +751,19 @@ class ProfitCalculatorAgent(AmazonAgent):
         )
 
     async def _run(self, task: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        # 真实数据优先：基于产品成本/售价/FBA费用真实核算
+        from data.provider import get_provider
+        from agents.real_data import build_profit_result
+        prov = get_provider()
+        sku = (ctx or {}).get("sku")
+        inputs, src = prov.get_profit_inputs(sku=sku)
+        if src != "demo" and inputs:
+            base = build_profit_result(inputs, src)
+            return {
+                "input": task,
+                "result": base["result"],
+                "kpis": base["kpis"],
+            }
         return {
             "input": task,
             "result": {
@@ -747,6 +845,39 @@ class ComplianceCheckerAgent(AmazonAgent):
         )
 
     async def _run(self, task: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        # AI 内容合规检查（v1.2.0 新增：亚马逊/TikTok Shop 双平台 AI 内容标注新规）
+        # 素材属性优先从 context 读取，其次从任务文本关键词推断，默认按最严格场景（含 AI 人物图）
+        from compliance.ai_content_rules import check_ai_content_compliance
+
+        def _flag(key: str, pos: tuple[str, ...], neg: tuple[str, ...], default: bool) -> bool:
+            if isinstance(ctx.get(key), bool):
+                return ctx[key]
+            t = str(task).lower()
+            if any(k in t for k in pos):
+                return True
+            if any(k in t for k in neg):
+                return False
+            return default
+
+        # platform 为字符串参数，单独推断：ctx 优先，其次任务文本，默认 all
+        _ctx_platform = ctx.get("platform")
+        if isinstance(_ctx_platform, str) and _ctx_platform in ("amazon", "tiktok", "all"):
+            _platform = _ctx_platform
+        else:
+            _tl = str(task).lower()
+            _platform = "tiktok" if any(k in _tl for k in ("tiktok", "抖音")) else (
+                "amazon" if any(k in _tl for k in ("amazon", "亚马逊")) else "all"
+            )
+
+        ai_check = check_ai_content_compliance(
+            platform=_platform,
+            image_has_real_human=_flag("has_real_human", ("真人", "模特", "人物"), ("无人", "纯产品", "无人物"), True),
+            image_is_ai_generated=_flag("is_ai_generated", ("ai生成", "ai图", "生成图"), ("实拍", "实景"), True),
+            image_is_ai_modified=_flag("is_ai_modified", ("ai修图", "深度合成", "换脸"), ("实拍",), False),
+            tiktok_is_ai_content=_flag("tiktok_is_ai_content", ("ai内容", "ai视频"), ("实拍",), True),
+            tiktok_product_appearance_modified=_flag("appearance_modified", ("篡改外观", "改外观"), ("实物一致",), False),
+            tiktok_fake_effect=_flag("fake_effect", ("捏造效果", "虚假效果", "夸大"), ("真实效果",), False),
+        )
         return {
             "input": task,
             "result": {
@@ -755,11 +886,31 @@ class ComplianceCheckerAgent(AmazonAgent):
                     "restricted_products": "✅ 不在限制类目", "ip_self_check": "✅ 无侵权风险",
                     "fcc_compliance": "⚠️ 缺失FCC文档", "battery_compliance": "✅ UN38.3已上传",
                 },
+                "ai_content_compliance": {
+                    "summary": ai_check["summary"],
+                    "risk_level": ai_check["risk_level"],
+                    "items": ai_check["items"],
+                    "action_required": "是" if not ai_check["all_pass"] else "否",
+                    "platform_rules": {
+                        "amazon": "AI 生成的逼真人物图须在元数据加 AI 披露标签（contains-synthetic-performer），未标注有违规风险",
+                        "tiktok_shop": "AI 生成内容须显著标注；禁止 AI 篡改商品外观或捏造不实效果",
+                    },
+                    "notice": (
+                        "素材属性自动推断：优先读 context（has_real_human/is_ai_generated/is_ai_modified/"
+                        "tiktok_is_ai_content/appearance_modified/fake_effect），"
+                        "其次从任务文本关键词识别（如「AI生成」「AI修图」「篡改外观」），"
+                        "无法识别时默认按最严格场景（含 AI 人物图需标注）提示。"
+                    ),
+                },
                 "missing_documents": [
                     {"doc": "FCC认证文档", "urgency": "高", "deadline": "尽快上传"},
                     {"doc": "锂电池MSDS报告", "urgency": "中", "deadline": "30天内"},
                 ],
                 "upcoming_changes": [
+                    {"date": "2025-04-01", "change": "亚马逊 AI 生成人物图元数据披露新规执行",
+                     "action": "AI 人物图添加 synthetic media 标签", "impact": "高"},
+                    {"date": "2025-04-15", "change": "TikTok Shop AIGC 内容标注与商品外观真实性要求",
+                     "action": "AI 素材显著标注 + 禁用 AI 篡改商品外观", "impact": "高"},
                     {"date": "2026-05-01", "change": "欧盟GPSR（通用产品安全法规）生效",
                      "action": "上传欧盟负责人（EU RP）信息", "impact": "高"},
                     {"date": "2026-06-01", "change": "美国儿童产品CPC证书更新",
@@ -768,10 +919,13 @@ class ComplianceCheckerAgent(AmazonAgent):
                 "recommendations": [
                     "立即上传FCC认证文档（避免listing被下架）",
                     "申请锂电池UN38.3测试报告上传",
+                    "检查全部商品图：AI 生成人物图必须添加 AI 披露元数据标签",
+                    "TikTok Shop 素材（图片/视频/直播）显著标注 AI 生成内容",
+                    "禁用 AI 篡改商品外观/捏造效果类素材，避免下架封店",
                     "建立合规日历，提前60天处理到期认证",
                 ],
             },
-            "kpis": {"compliance_score": "88/100", "risk_items": 2, "documents_to_upload": 3},
+            "kpis": {"compliance_score": "88/100", "risk_items": 2, "documents_to_upload": 3, "ai_risk_level": ai_check["risk_level"]},
         }
 
 
@@ -905,6 +1059,10 @@ class CompetitorAnalysisAgent(AmazonAgent):
 # 全局注册（确保所有Agent被ChiefOfStaff发现）
 # ══════════════════════════════════════════════════════════════════════════════
 
+# 工作流支撑 Agent（supply_chain / qa_agent）
+from .support_agents import SupplyChainAgent, QAAgent  # noqa: E402
+
+
 def _register_all() -> None:
     """模块首次导入时注册所有Agent"""
     for cls in (
@@ -932,6 +1090,8 @@ def _register_all() -> None:
         CompetitorAnalysisAgent,
         # GUI（1）
         GUIAgent,
+        # 🆕 工作流支撑（2）：supply_chain / qa_agent
+        SupplyChainAgent, QAAgent,
     ):
         cls()  # 实例化，触发基类注册
 
