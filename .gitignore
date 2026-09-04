@@ -37,9 +37,3 @@ Thumbs.db
 
 # Audit logs
 security/mcp_audit_logs/
-
-# v2.2 runtime data (seller local artifacts)
-data/seller/
-data/memory/
-data/import/
-data/_*.json

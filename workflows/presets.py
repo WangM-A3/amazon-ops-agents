@@ -25,7 +25,7 @@ class WorkflowStatus(Enum):
 # ─── 工作流步骤定义 ────────────────────────────────────────────────────────────
 @dataclass
 class WorkflowStep:
-    """工作流步骤"""
+    """工作流步骤（v2.3 复核沙箱扩展）"""
     name: str
     agent_id: str
     description: str
@@ -33,6 +33,11 @@ class WorkflowStep:
     output_key: str         # 写入context的输出key
     estimated_seconds: int = 5
     optional: bool = False
+    # ── v2.3 复核沙箱层 ─────────────────────────────────────────────────────
+    review: bool = False                # 该步骤产物需要人工复核后才放行采纳
+    review_reason: str = ""             # 复核原因（why 需要人看）
+    risk: str = "low"                   # low | medium | high
+    expected_keys: list[str] = field(default_factory=list)  # 产物应含的键（缺失→提示性校验，不中断）
 
 
 @dataclass
@@ -82,6 +87,10 @@ WORKFLOW_NEW_PRODUCT_LAUNCH = PresetWorkflow(
             input_key="research_result + keywords",
             output_key="listing_content",
             estimated_seconds=20,
+            review=True,
+            review_reason="对外 Listing 文案（标题/五点），上架前需人工复核措辞与合规",
+            risk="high",
+            expected_keys=["optimized_title", "bullet_points"],
         ),
         WorkflowStep(
             name="A+内容生成",
@@ -124,6 +133,10 @@ WORKFLOW_AD_OPTIMIZATION = PresetWorkflow(
             input_key="ad_analysis + competitor_ads",
             output_key="optimization_plan",
             estimated_seconds=15,
+            review=True,
+            review_reason="涉及竞价/预算调整建议（花钱动作），执行前需人工复核",
+            risk="high",
+            expected_keys=["optimization_plan"],
         ),
         WorkflowStep(
             name="ROI预测",
@@ -165,6 +178,9 @@ WORKFLOW_INVENTORY_ALERT = PresetWorkflow(
             input_key="sales_forecast + current_inventory",
             output_key="replenishment_plan",
             estimated_seconds=10,
+            review=True,
+            review_reason="补货涉及采购资金占用，下单前需人工复核数量与节奏",
+            risk="medium",
         ),
         WorkflowStep(
             name="供应链评估",
@@ -214,6 +230,9 @@ WORKFLOW_CUSTOMER_SERVICE = PresetWorkflow(
             input_key="buyer_message + kb_answers",
             output_key="draft_reply",
             estimated_seconds=8,
+            review=True,
+            review_reason="将发送给买家的回复文案，发出前需人工复核语气与合规",
+            risk="high",
         ),
         WorkflowStep(
             name="风险审核",
@@ -241,7 +260,7 @@ PRESET_WORKFLOWS: dict[str, PresetWorkflow] = {
 # ─── WorkflowEngine ─────────────────────────────────────────────────────────────
 @dataclass
 class WorkflowExecutionResult:
-    """工作流执行结果"""
+    """工作流执行结果（v2.3 含复核沙箱 reviews）"""
     workflow_id: str
     status: WorkflowStatus
     step_results: dict[str, Any] = field(default_factory=dict)
@@ -250,6 +269,8 @@ class WorkflowExecutionResult:
     started_at: str = ""
     completed_at: str = ""
     estimated_vs_actual: dict[str, int] = field(default_factory=dict)
+    # ── v2.3：步骤复核沙箱（output_key → review 信息）────────────────────────
+    reviews: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class WorkflowEngine:
@@ -298,6 +319,7 @@ class WorkflowEngine:
         workflow = PRESET_WORKFLOWS[workflow_id]
         step_results: dict[str, Any] = {}
         estimated_vs_actual: dict[str, int] = {}
+        reviews: dict[str, dict[str, Any]] = {}
         step_start = time.time()
 
         logger.info(
@@ -321,6 +343,15 @@ class WorkflowEngine:
                 step_results[step.output_key] = result
                 elapsed = int(time.time() - step_start)
                 estimated_vs_actual[step.name] = elapsed
+
+                # ── v2.3 复核沙箱层：每步输出校验 + 复核标记 ────────────────
+                reviews[step.output_key] = self._sandbox_step(step, result)
+                rinfo = reviews[step.output_key]
+                logger.info(
+                    f"[WorkflowEngine]   🛡 {step_name} "
+                    f"review={step.review} validated={rinfo['validated']} "
+                    f"missing={rinfo['missing']}"
+                )
 
                 logger.info(
                     f"[WorkflowEngine]   ✓ {step_name} "
@@ -353,6 +384,7 @@ class WorkflowEngine:
             started_at=datetime.now().isoformat(),
             completed_at=datetime.now().isoformat(),
             estimated_vs_actual=estimated_vs_actual,
+            reviews=reviews,
         )
 
         logger.info(
@@ -412,8 +444,53 @@ class WorkflowEngine:
         )
         return result
 
+    # ── v2.3 复核沙箱层 ──────────────────────────────────────────────────────
+    @staticmethod
+    def _unwrap_payload(result: Any) -> Any:
+        """解包 Agent 信封（{agent,tokens,result,kpis,...}）取业务产物"""
+        if isinstance(result, dict) and isinstance(result.get("result"), dict):
+            return result["result"]
+        if isinstance(result, dict) and "error" in result:
+            return None
+        return result
+
+    def _sandbox_step(
+        self,
+        step: WorkflowStep,
+        result: Any,
+    ) -> dict[str, Any]:
+        """
+        步骤"沙箱"：对单步产物做隔离校验与复核登记（不跨步污染）。
+
+        - 输出校验：产物应含 expected_keys（缺失 → validated=False，提示性，不中断流程）
+        - 复核登记：review=True 的步骤标记为待人工复核（approve/reject 由 ReviewGate 处理）
+        """
+        payload = self._unwrap_payload(result)
+        missing: list[str] = []
+        if isinstance(payload, dict) and step.expected_keys:
+            missing = [k for k in step.expected_keys if k not in payload]
+        info: dict[str, Any] = {
+            "step": step.name,
+            "agent_id": step.agent_id,
+            "review_required": step.review,
+            "risk": step.risk,
+            "reason": step.review_reason,
+            "decision": "pending" if step.review else "auto",
+            "validated": not missing,
+            "missing": missing,
+        }
+        if step.review:
+            # 给复核人产物预览（截断，不含完整数据）
+            try:
+                import json as _json
+                preview = _json.dumps(payload, ensure_ascii=False)[:400] if payload is not None else ""
+                info["preview"] = preview
+            except Exception:  # noqa: BLE001
+                info["preview"] = str(payload)[:200]
+        return info
+
     def list_workflows(self) -> list[dict[str, Any]]:
-        """列出所有预置工作流"""
+        """列出所有预置工作流（v2.3 含复核标记）"""
         return [
             {
                 "id": wf.id,
@@ -427,6 +504,9 @@ class WorkflowEngine:
                         "name": s.name,
                         "agent_id": s.agent_id,
                         "estimated_seconds": s.estimated_seconds,
+                        "review": s.review,
+                        "risk": s.risk,
+                        "review_reason": s.review_reason,
                     }
                     for s in wf.steps
                 ],

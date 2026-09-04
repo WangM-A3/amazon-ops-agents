@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import tempfile
+from datetime import date, timedelta
 
 import pytest
 
@@ -18,10 +19,15 @@ from data.provider import reset_provider, SOURCE_DEMO, SOURCE_LOCAL  # noqa: E40
 from data.store import SellerDataStore  # noqa: E402
 from data.ingest import ingest_file  # noqa: E402
 
-_SALES_CSV = """sku,date,units,orders,revenue,sessions
-P1,2026-08-20,10,9,180.0,120
-P1,2026-08-21,12,11,216.0,140
-P2,2026-08-20,4,4,60.0,50
+# 日期相对"今天"动态生成：store.get_inventory 的近 14 天窗口依赖 date.today()，
+# 写死历史日期会随系统时间推移滑出窗口（日期敏感腐烂）。
+_D1 = (date.today() - timedelta(days=2)).isoformat()
+_D2 = (date.today() - timedelta(days=1)).isoformat()
+
+_SALES_CSV = f"""sku,date,units,orders,revenue,sessions
+P1,{_D1},10,9,180.0,120
+P1,{_D2},12,11,216.0,140
+P2,{_D1},4,4,60.0,50
 """
 _PRODUCTS_CSV = """sku,title,marketplace,unit_cost,price
 P1,样品A,US,3.0,18.0

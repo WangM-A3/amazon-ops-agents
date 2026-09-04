@@ -75,13 +75,15 @@ class WorkflowRequest(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict, description="工作流输入参数")
 
 class WorkflowResponse(BaseModel):
-    """工作流响应"""
+    """工作流响应（v2.3 含复核沙箱 reviews）"""
     workflow_id: str
     status: str
     error: str | None = None
     step_results: dict[str, Any]
     total_seconds: float
     estimated_vs_actual: dict[str, int] = Field(default_factory=dict)
+    run_id: str | None = None
+    reviews: dict[str, Any] = Field(default_factory=dict)
 
 class HealthResponse(BaseModel):
     """健康检查响应"""
@@ -505,11 +507,17 @@ async def run_workflow(
     request: Request,
     auth: dict = Depends(require_auth),
 ) -> WorkflowResponse:
-    """一键启动预置工作流（README 对齐：new_product_launch / ad_optimization / inventory_alert / customer_service）"""
+    """一键启动预置工作流（v2.3：响应含 run_id + 待复核 reviews 清单）"""
     logger.info(f"[Workflow] {req.workflow_id} | input={str(req.input)[:80]}")
     audit("workflow_run", request.headers.get("X-API-Key", ""), {"workflow_id": req.workflow_id})
     from workflows.presets import WORKFLOW_ENGINE
+    from workflows.review_gate import REVIEW_GATE, new_run_id
+
     result = await WORKFLOW_ENGINE.launch(req.workflow_id, req.input)
+    # v2.3：登记待复核步骤（review_required=True 的产物）
+    run_id = new_run_id()
+    if result.reviews:
+        REVIEW_GATE.register(run_id, req.workflow_id, result.reviews)
     return WorkflowResponse(
         workflow_id=result.workflow_id,
         status=result.status.value,
@@ -517,7 +525,49 @@ async def run_workflow(
         step_results=result.step_results,
         total_seconds=result.total_seconds,
         estimated_vs_actual=result.estimated_vs_actual,
+        run_id=run_id,
+        reviews=result.reviews,
     )
+
+
+class WorkflowReviewRequest(BaseModel):
+    """工作流步骤复核决策（v2.3）"""
+    run_id: str = Field(..., min_length=1, description="工作流运行的 run_id")
+    step_key: str = Field(..., min_length=1, description="待复核步骤的 output_key")
+    decision: str = Field(..., pattern="^(approve|reject)$", description="approve=采纳 / reject=不采纳")
+    comment: str = Field(default="", max_length=500, description="复核备注")
+
+
+@app.post("/api/v1/workflow/review", tags=["工作流"])
+async def review_workflow_step(
+    req: WorkflowReviewRequest,
+    request: Request,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """人工复核工作流步骤产物（approve 后该建议才视为可采纳）"""
+    from workflows.review_gate import REVIEW_GATE
+    item = REVIEW_GATE.decide(
+        req.run_id, req.step_key, req.decision,
+        comment=req.comment, reviewer=auth.get("name", "seller"),
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail={
+            "code": "NOT_FOUND",
+            "message": f"run_id={req.run_id} 的步骤 {req.step_key} 不存在或已过期",
+        })
+    audit("workflow_review", request.headers.get("X-API-Key", ""),
+          {"run_id": req.run_id, "step_key": req.step_key, "decision": req.decision})
+    return {"status": "reviewed", "item": item}
+
+
+@app.get("/api/v1/workflow/review/{run_id}", tags=["工作流"])
+async def review_status(
+    run_id: str,
+    auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """查询一次工作流运行的复核状态（全部步骤的 decision）"""
+    from workflows.review_gate import REVIEW_GATE
+    return REVIEW_GATE.status(run_id)
 
 
 @app.get("/api/v1/stats", tags=["系统"])

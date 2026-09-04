@@ -1,13 +1,15 @@
 ---
 name: "amazon-ops-silicon-army"
-description: "亚马逊运营硅基军团 v2.2 — 面向跨境电商卖家的 Multi-Agent 运营系统（幕僚长 + 24 专业 Agent）。真实数据层（CSV 导入/SP-API）+ 真实 LLM 路由 + 4 预置工作流 + AI 内容合规检查 + 经验记忆闭环（卖家沉淀运营经验，同类任务自动注入，打分自动停用低效经验），已接入 DSH Harness。"
-whenToUse: "用户需要选品分析、Listing 优化、广告 ACOS 优化、库存预警、利润核算、差评回复、跟卖检测、账号健康、AI 内容合规检查、沉淀/教 Agent 记住运营偏好（经验记忆）等亚马逊运营任务时使用。触发词：选品/List/广告/ACOS/PPC/FBA/Listing/跟卖/差评/VINE/利润/库存/定价/合规/AI合规/AI内容/AIGC/经验/记住/教他/亚马逊运营/Amazon Seller/TikTok Shop。"
+description: "亚马逊运营硅基军团 v2.3 — 面向跨境电商卖家的 Multi-Agent 运营系统（幕僚长 + 24 专业 Agent）。真实数据层（CSV 导入/SP-API）+ 真实 LLM 路由 + 4 预置工作流（含复核沙箱：步骤校验+人工复核闸门）+ AI 内容合规检查 + 经验记忆闭环，已接入 DSH Harness。"
+whenToUse: "用户需要选品分析、Listing 优化、广告 ACOS 优化、库存预警、利润核算、差评回复、跟卖检测、账号健康、AI 内容合规检查、沉淀/教 Agent 记住运营偏好（经验记忆）、工作流步骤复核（approve/reject 高风险产物）等亚马逊运营任务时使用。触发词：选品/List/广告/ACOS/PPC/FBA/Listing/跟卖/差评/VINE/利润/库存/定价/合规/AI合规/AI内容/AIGC/经验/记住/教他/工作流/复核/亚马逊运营/Amazon Seller/TikTok Shop。"
 ---
 
-# Amazon Operations Silicon Army v2.2 — 亚马逊运营硅基军团
+# Amazon Operations Silicon Army v2.3 — 亚马逊运营硅基军团
 
-> 版本 v2.2.0（2026-08-28）：新增「经验记忆闭环」— Agent 本地经验库（SQLite）。
-> 卖家把运营偏好/修正策略沉淀为经验 → 同类任务自动注入 prompt → 打分回写统计 → 低成功率经验自动停用。
+> 版本 v2.3.0（2026-09-04）：新增「工作流复核沙箱层」— 4 个预置工作流的每个步骤产物
+> 独立校验（expected_keys），高风险对外步骤（Listing 文案/广告调价建议/补货计划/客服回复）
+> 进入人工复核闸门（approve/reject + 审计）。映射 WeKnora v0.8「沙箱 + 工具级审批」到单机引擎的轻量实现。
+> v2.2.0（2026-08-28）：新增「经验记忆闭环」— Agent 本地经验库（SQLite）。
 > v2.1.0（2026-03）：新增 AI 内容合规层 — 亚马逊 AI 人物图元数据披露 + TikTok Shop AIGC 标注与禁用 AI 篡改商品外观（双平台新规）。
 > v2.0.0（2026-08-26）：真实数据层 + 真实 LLM 路由 + 工作流修复 + 测试基建 + 诚实基准。
 > 相比 v1.x（全 Mock 演示壳）：业务 Agent 不再返回硬编码模板，改为「真实数据优先 → LLM 分析 → 模板兜底」三级。
@@ -80,6 +82,33 @@ whenToUse: "用户需要选品分析、Listing 优化、广告 ACOS 优化、库
 | customer_service | 4 | 分类→知识库→回复→合规审核 |
 
 API：`POST /api/v1/workflow`（workflow_id + input）、`GET /api/v1/workflows`
+（v2.3：workflow 响应含 `run_id` + `reviews`——每步产物校验 + 待复核清单）
+
+## 五·二、工作流复核沙箱层（v2.3 新增）
+
+> 映射 WeKnora v0.8「沙箱运行时 + 工具级人工审批 require_approval + pending」到单机引擎的轻量实现。
+> 设计取舍：卖家一键包无 Docker → 不引入容器沙箱；"沙箱"语义 = **产物隔离校验 + 复核闸门 + 全链路审计**。
+
+```
+工作流启动(POST /api/v1/workflow) → run_id
+   │
+   ▼
+每步执行 → 产物校验(expected_keys 缺失→记录 validated/missing，不中断)
+   │
+   ▼
+review=True 的高风险步骤（对外产物）→ decision=pending，列入待复核
+   │   （new_product_launch: Listing文案·high | ad_optimization: 调价建议·high
+   │     inventory_alert: 补货计划·medium | customer_service: 客服回复·high）
+   ▼
+人工复核 POST /api/v1/workflow/review {run_id, step_key, decision: approve|reject, comment}
+   │   → 审计落盘（谁在何时批准/否决了什么产物）；幂等（已决策不可改）
+   ▼
+GET /api/v1/workflow/review/{run_id} → 全部步骤决策状态
+```
+
+- 模块：`workflows/presets.py`（`WorkflowStep.review/risk/expected_keys` + `_sandbox_step` 校验）、`workflows/review_gate.py`（ReviewGate：登记/查询/决策 + 审计）
+- 关键语义：**所有步骤产物默认只读建议**；approve = 该建议可采纳，reject = 不采纳（仅记录，不触发任何外部动作）——与"人工确认闸门"一致
+- 产物预览：待复核项带 `preview`（截断 400 字符），复核人无需展开完整结果
 
 ## 五·五、AI 内容合规层（v2.1 新增）
 
@@ -113,6 +142,7 @@ print(r["summary"], r["risk_level"], r["all_pass"])
 
 - FastAPI（默认 8080）：`/health`、`/api/v1/agents`、`/api/v1/routing`、`/api/v1/execute`、`/api/v1/batch`、`/api/v1/workflow(s)`、`/api/v1/stats`、`/api/v1/audit`、`/api/v1/feedback`
 - 经验记忆（v2.2）：`/api/v1/memory/experience`（增/查）、`/api/v1/memory/experience/{id}/deactivate`（停用）、`/api/v1/memory/rating`（打分回写）
+- 工作流复核（v2.3）：`POST /api/v1/workflow/review`（approve/reject）、`GET /api/v1/workflow/review/{run_id}`（状态）
 - 鉴权：X-API-Key（HMAC 签名可选）；限流 100/min/Key（内存）
 - GUIGuardian：10 类危险操作 BLOCK / 5 类敏感操作 CONFIRM / 全量 AUDIT；凭证 HMAC-SHA256 加密
 - 全链路 Tracing：每请求 trace_id，AuditTrail SQLite 落盘，TraceQuery 可回查
@@ -171,7 +201,7 @@ print(r["summary"], r["risk_level"], r["all_pass"])
 .runtime/python312/python.exe
 
 # 统一 CLI 入口 run_ops.py（内置 sys.path 引导，规避嵌入式 Python ._pth 忽略 CWD）
-.runtime/python312/python.exe run_ops.py test          # 全量测试 92 项
+.runtime/python312/python.exe run_ops.py test          # 全量测试 98 项
 .runtime/python312/python.exe run_ops.py selftest      # 自测套件 9 项
 .runtime/python312/python.exe run_ops.py bench         # 诚实基准
 .runtime/python312/python.exe run_ops.py po-test       # ProfitOptimizer 17 项
@@ -182,6 +212,7 @@ print(r["summary"], r["risk_level"], r["all_pass"])
 
 ## 九、版本说明与诚实声明
 
+- **v2.3.0（2026-09-04）**：工作流复核沙箱层 — `workflows/presets.py`（每步产物校验 + review/risk 标记）+ `workflows/review_gate.py`（approve/reject 复核门 + 审计）+ `/api/v1/workflow/review`；测试 98/98
 - **v2.2.0（2026-08-28）**：经验记忆闭环 — `memory/experience_store.py`（SQLite 经验库）+ LLM prompt 注入 + `/api/v1/memory/*` + `/api/v1/memory/rating` 打分淘汰；测试 92/92
 - **v2.1.0（2026-03）**：AI 内容合规层 — `compliance/ai_content_rules.py` 双平台规则库、ComplianceCheckerAgent/Listing/A+ 合规检查、LLM prompt 合规注入
 - **v2.0.0（2026-08-26）**：真实数据层、真实 LLM 路由、工作流修复（4/4）、测试基建（68/68）、诚实基准、DSH Harness 接入
